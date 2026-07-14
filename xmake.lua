@@ -2,8 +2,7 @@ add_rules("mode.debug", "mode.release")
 
 add_repositories("levimc-repo https://github.com/LiteLDev/xmake-repo.git")
 
--- 移除 target_type 选项配置，直接强制 LeviLamina 为 client 端
-add_requires("levilamina", {configs = {target_type = "client"}})
+add_requires("levilamina 26.10.14", {configs = {target_type = "client"}})
 
 add_requires("levibuildscript")
 add_requires("imgui", {configs = {shared = false, win32 = true, dx11 = true}})
@@ -27,19 +26,20 @@ target("ChiyanMap")
         "/w45263",
         "/w44738",
         "/w45204",
-        "/wd4100",   -- 允许未使用的函数参数
-        "/wd4189"    -- 允许已初始化但未使用的局部变量
+        "/wd4100",
+        "/wd4189"
     )
     add_defines("NOMINMAX", "UNICODE")
     add_packages("levilamina", "imgui", "minhook", "nlohmann_json")
-    add_syslinks("d3d11", "dxgi", "user32", "delayimp")
+    add_syslinks("d3d11", "d3d12", "dxgi", "windowscodecs", "ole32", "user32", "delayimp")
     add_ldflags("/DELAYLOAD:dwmapi.dll", "/DELAYLOAD:imm32.dll", "/DELAYLOAD:LeviLamina.dll")
     add_shflags("/DELAYLOAD:dwmapi.dll", "/DELAYLOAD:imm32.dll", "/DELAYLOAD:LeviLamina.dll")
     set_kind("shared")
     set_languages("c++20")
     set_symbols("debug")
-    
+
     add_headerfiles("src/**.h")
     add_files("src/**.cpp")
     add_includedirs("src")
-    -- 完全移除服务端和客户端的 if-else 区分逻辑
+    add_defines("_USE_MATH_DEFINES")
+    add_cflags("/D__attribute__(x)=", {tools = {"cl"}})

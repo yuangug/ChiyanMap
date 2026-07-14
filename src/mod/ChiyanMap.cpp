@@ -36,6 +36,8 @@ int g_playerBlockZ = 0;
 
 std::atomic<bool> g_radarUpdated{false};
 std::vector<RadarEntity> g_radarEntities;
+std::unordered_map<std::string, PlayerSkinHead> g_playerSkinHeads;
+std::mutex g_playerSkinMutex;
 // 注意：旧的 g_mapDataUpdated 已经删除以修复 LNK2001
 
 namespace chiyan_map {

@@ -1,8 +1,10 @@
 #include "hooks/HookRegistry.h"
+#include "hooks/DX11Hook.h"
 #include "hooks/PlayerHook.h"
 #include "hooks/UIRenderHook.h"
 
 void registerAllHooks() {
+    DX11Hook::init();
     // 只注册原生的游戏逻辑与 UI 钩子
     ClientInstanceUpdateHook::hook();
     UIRenderContextFlushTextHook::hook();

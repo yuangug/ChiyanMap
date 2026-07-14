@@ -192,4 +192,69 @@ namespace MapCacheManager {
         auto it = g_loadedRegions.find(hash);
         if (it != g_loadedRegions.end() && it->second) it->second->textureDirty = true;
     }
+
+    void PreloadScanBuffer(int centerX, int centerZ, mce::Color colors[MAP_DATA_SIZE][MAP_DATA_SIZE], float heights[MAP_DATA_SIZE][MAP_DATA_SIZE]) {
+        std::lock_guard<std::mutex> lock(g_cacheMutex);
+        if (g_cacheDir.empty()) return;
+
+        int startX = centerX - MAP_DATA_RADIUS;
+        int startZ = centerZ - MAP_DATA_RADIUS;
+        int endX = startX + MAP_DATA_SIZE - 1;
+        int endZ = startZ + MAP_DATA_SIZE - 1;
+
+        auto toRegion = [](int wc) -> int {
+            return wc < 0 ? (wc + 1) / REGION_SIZE - 1 : wc / REGION_SIZE;
+        };
+
+        int minRX = toRegion(startX);
+        int maxRX = toRegion(endX);
+        int minRZ = toRegion(startZ);
+        int maxRZ = toRegion(endZ);
+
+        for (int rz = minRZ; rz <= maxRZ; rz++) {
+            for (int rx = minRX; rx <= maxRX; rx++) {
+                uint64_t hash = GetRegionHash(rx, rz);
+
+                if (g_loadedRegions.find(hash) == g_loadedRegions.end() || g_loadedRegions[hash] == nullptr) {
+                    auto* region = new RegionData();
+                    std::string fp = g_cacheDir + "region_" + std::to_string(rx) + "_" + std::to_string(rz) + ".bin";
+                    std::ifstream in(fp, std::ios::binary);
+                    if (!in.is_open()) {
+                        delete region;
+                        g_loadedRegions[hash] = nullptr;
+                        continue;
+                    }
+                    in.read((char*)region->colors, sizeof(region->colors));
+                    region->textureDirty = true;
+                    g_loadedRegions[hash] = region;
+                }
+
+                RegionData* region = g_loadedRegions[hash];
+                if (!region) continue;
+
+                int rox = rx * REGION_SIZE;
+                int roz = rz * REGION_SIZE;
+                int lsx = (startX > rox) ? startX : rox;
+                int lsz = (startZ > roz) ? startZ : roz;
+                int lex = (endX < rox + REGION_SIZE - 1) ? endX : (rox + REGION_SIZE - 1);
+                int lez = (endZ < roz + REGION_SIZE - 1) ? endZ : (roz + REGION_SIZE - 1);
+
+                for (int wz = lsz; wz <= lez; wz++) {
+                    for (int wx = lsx; wx <= lex; wx++) {
+                        int lx = wx - rox;
+                        int lz = wz - roz;
+                        int idx = (lz * REGION_SIZE + lx) * 4;
+                        uint8_t a = region->colors[idx + 3];
+                        if (a == 0) continue;
+                        int sx = wx - startX;
+                        int sz = wz - startZ;
+                        colors[sx][sz].r = region->colors[idx + 0] / 255.0f;
+                        colors[sx][sz].g = region->colors[idx + 1] / 255.0f;
+                        colors[sx][sz].b = region->colors[idx + 2] / 255.0f;
+                        colors[sx][sz].a = a / 255.0f;
+                    }
+                }
+            }
+        }
+    }
 }

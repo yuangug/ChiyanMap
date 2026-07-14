@@ -31,9 +31,56 @@
 #include <mc/world/item/ItemStack.h>
 #include <mc/deps/core/math/Vec2.h>
 #include <mc/world/phys/HitResult.h>
+#include <mc/world/actor/player/SerializedSkinRef.h>
+#include <mc/world/actor/player/SerializedSkinImpl.h>
+#include <mc/world/actor/player/SkinImage.h>
+#include <mc/deps/core/image/Image.h>
+#include <mc/platform/UUID.h>
 #include "state/MapRenderState.h"
 #include "state/MapCacheManager.h"
 #include "state/LanguageManager.h"
+
+// 提取玩家皮肤 8x8 头部正面像素
+inline void ExtractPlayerSkinHead(class Player* player, const std::string& uuid) {
+    if (uuid.empty()) return;
+    {
+        std::lock_guard<std::mutex> lock(g_playerSkinMutex);
+        auto it = g_playerSkinHeads.find(uuid);
+        if (it != g_playerSkinHeads.end() && it->second.valid) return;
+    }
+    try {
+        if (!player->mSkin) return;
+        auto& skinRef = *player->mSkin;
+        if (!skinRef.mSkinImpl) return;
+        auto& threadOwner = *skinRef.mSkinImpl;
+        auto& skinImpl = threadOwner.mObject;
+        if (skinImpl.mIsPersona) return;
+        auto& skinImage = skinImpl.mSkinImage.get();
+        auto& img = static_cast<mce::Image&>(skinImage);
+        if (img.mWidth < 8 || img.mHeight < 8) return;
+        if (img.imageFormat != mce::ImageFormat::RGBA8Unorm) return;
+        const uint8_t* pixels = img.mImageBytes.data();
+        if (!pixels) return;
+        int headX = img.mWidth / 8;
+        int headY = img.mHeight / 8;
+        int headS = img.mWidth / 8;
+        if (headS > 8) headS = 8;
+        PlayerSkinHead head;
+        for (int y = 0; y < 8 && y < headS; y++) {
+            for (int x = 0; x < 8 && x < headS; x++) {
+                int si = ((headY + y) * (int)img.mWidth + (headX + x)) * 4;
+                int di = (y * 8 + x) * 4;
+                head.pixels[di+0] = pixels[si+0];
+                head.pixels[di+1] = pixels[si+1];
+                head.pixels[di+2] = pixels[si+2];
+                head.pixels[di+3] = pixels[si+3];
+            }
+        }
+        head.valid = true;
+        std::lock_guard<std::mutex> lock(g_playerSkinMutex);
+        g_playerSkinHeads[uuid] = head;
+    } catch (...) {}
+}
 
 extern float g_playerX;
 extern float g_playerY;
@@ -470,6 +517,8 @@ LL_TYPE_INSTANCE_HOOK(
                 std::memset(g_mapHeightsBack, 0, sizeof(g_mapHeightsBack));
                 std::memset(g_mapColorsBack, 0, sizeof(g_mapColorsBack));
                 
+                MapCacheManager::PreloadScanBuffer(g_playerBlockX, g_playerBlockZ, g_mapColors, g_mapHeights);
+                
                 MapRenderState::clearGPUCache.store(true); 
                 g_mapDataUpdated.store(true);
             }
@@ -715,7 +764,7 @@ LL_TYPE_INSTANCE_HOOK(
         }
 
         static int entityDelay = 0;
-        if (++entityDelay >= 60) {
+        if (++entityDelay >= 15) {
             entityDelay = 0;
             std::vector<RadarEntity> tempEntities;
             auto& level = player->getLevel();
@@ -731,12 +780,27 @@ LL_TYPE_INSTANCE_HOOK(
 
                 if (dx * dx + dz * dz > MAP_DATA_RADIUS * MAP_DATA_RADIUS) continue;
 
-                int type = 2; 
-                if (actor->isPlayer()) type = 0;
-                else if (actor->hasCategory(ActorCategory::Item)) type = 3;
-                else if (actor->hasCategory(ActorCategory::Monster)) type = 1;
-                
-                tempEntities.push_back({ePos.x, ePos.y, ePos.z, type});
+                int type = 2;
+                std::string entityType;
+                std::string uuid;
+                if (actor->isPlayer()) {
+                    type = 0;
+                    entityType = "player";
+                    auto* p = static_cast<class Player*>(actor);
+                    uuid = static_cast<std::string>(p->getUuid());
+                    ExtractPlayerSkinHead(p, uuid);
+                } else if (actor->hasCategory(ActorCategory::Item)) {
+                    type = 3;
+                    entityType = "item";
+                } else if (actor->hasCategory(ActorCategory::Monster)) {
+                    type = 1;
+                    entityType = actor->getTypeName();
+                } else {
+                    type = 2;
+                    entityType = actor->getTypeName();
+                }
+
+                tempEntities.push_back({ePos.x, ePos.y, ePos.z, type, entityType, uuid});
             }
             g_radarEntities = tempEntities;
             g_radarUpdated.store(true);

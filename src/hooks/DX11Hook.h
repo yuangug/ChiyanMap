@@ -29,10 +29,12 @@
 #include <cstring>
 #include <algorithm>
 #include <filesystem>
+#include <windows.h>
 #include "hooks/PlayerHook.h"
 #include "state/MapCacheManager.h"
 #include "state/WaypointManager.h"
 #include "state/LanguageManager.h"
+#include <wincodec.h>
 
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "d3d11.lib")
@@ -85,6 +87,399 @@ namespace DX11Hook {
     // 记录上一次真实推送到 DX11 纹理的坐标中心
     inline float g_textureCenterX = 0.0f;
     inline float g_textureCenterZ = 0.0f;
+
+    // BetterRenderDragon 兼容：检测是否加载，决定后缓冲区资源状态转换策略
+    inline bool g_brdPresent = false;
+
+    // ==========================================
+    // 生物头像系统
+    // ==========================================
+    inline const int FACE_SIZE = 12; // 面孔贴图尺寸 12x12
+
+    // 面孔颜色方案
+    struct MobFace {
+        uint8_t skin[3];
+        uint8_t eye[3];
+        uint8_t eyePupil[3];
+        uint8_t mouth[3];
+        uint8_t hair[3];
+        uint8_t accent[3];
+    };
+
+    // 已知生物类型 → 面孔颜色查找表
+    inline std::unordered_map<std::string, DX11Hook::MobFace> g_typeToFace = {
+        // 敌对生物
+        {"minecraft:zombie",            {{80,130,50},{200,200,200},{0,0,0},{60,30,10},{50,70,30},{0,0,0}}},
+        {"minecraft:skeleton",          {{190,190,190},{0,0,0},{0,0,0},{80,80,80},{190,190,190},{80,80,80}}},
+        {"minecraft:creeper",           {{100,180,100},{255,255,255},{0,0,0},{0,0,0},{100,180,100},{0,0,0}}},
+        {"minecraft:spider",            {{80,50,40},{200,50,50},{0,0,0},{30,20,15},{50,30,20},{0,0,0}}},
+        {"minecraft:cave_spider",       {{70,100,120},{200,50,50},{0,0,0},{30,40,50},{50,70,90},{0,0,0}}},
+        {"minecraft:enderman",          {{30,20,40},{200,50,200},{0,0,0},{10,10,20},{10,5,20},{200,50,200}}},
+        {"minecraft:blaze",             {{220,180,50},{255,200,50},{0,0,0},{180,100,20},{200,150,30},{0,0,0}}},
+        {"minecraft:ghast",             {{220,220,220},{200,50,50},{0,0,0},{150,150,150},{220,220,220},{0,0,0}}},
+        {"minecraft:slime",             {{80,200,80},{255,255,255},{0,0,0},{40,100,40},{60,150,60},{0,0,0}}},
+        {"minecraft:magma_cube",        {{200,120,40},{255,200,50},{0,0,0},{150,80,20},{180,100,30},{0,0,0}}},
+        {"minecraft:witch",             {{80,60,50},{200,50,50},{0,0,0},{50,30,20},{20,20,30},{100,100,30}}},
+        {"minecraft:guardian",          {{150,180,200},{255,255,200},{0,0,0},{100,120,140},{80,120,150},{200,200,0}}},
+        {"minecraft:elder_guardian",    {{120,150,180},{255,255,200},{0,0,0},{80,100,120},{60,100,130},{200,200,0}}},
+        {"minecraft:silverfish",        {{120,120,120},{0,0,0},{0,0,0},{80,80,80},{100,100,100},{0,0,0}}},
+        {"minecraft:endermite",         {{60,40,50},{200,50,200},{0,0,0},{40,25,35},{40,25,35},{0,0,0}}},
+        {"minecraft:shulker",           {{140,100,160},{200,200,200},{0,0,0},{100,70,120},{120,80,140},{0,0,0}}},
+        {"minecraft:phantom",           {{60,80,100},{200,50,50},{0,0,0},{40,50,70},{40,60,80},{0,0,0}}},
+        {"minecraft:drowned",           {{60,100,80},{150,200,150},{0,0,0},{30,60,40},{30,80,50},{0,150,150}}},
+        {"minecraft:husk",              {{150,140,100},{200,200,150},{0,0,0},{100,90,60},{120,110,70},{0,0,0}}},
+        {"minecraft:stray",             {{160,170,180},{200,100,200},{0,0,0},{100,110,120},{120,130,140},{150,150,255}}},
+        {"minecraft:wither_skeleton",   {{40,40,40},{200,50,50},{0,0,0},{20,20,20},{20,20,20},{0,0,0}}},
+        {"minecraft:zombie_villager",   {{80,130,50},{200,200,200},{0,0,0},{60,30,10},{50,70,30},{150,100,50}}},
+        {"minecraft:zombified_piglin",  {{120,100,80},{200,50,50},{0,0,0},{80,60,40},{100,80,60},{255,150,50}}},
+        {"minecraft:piglin",            {{200,140,100},{200,100,50},{0,0,0},{150,100,60},{180,120,80},{255,150,50}}},
+        {"minecraft:piglin_brute",      {{200,130,90},{200,50,50},{0,0,0},{150,90,50},{180,110,70},{200,100,0}}},
+        {"minecraft:hoglin",            {{150,100,80},{200,150,100},{0,0,0},{100,60,40},{120,80,60},{100,60,40}}},
+        {"minecraft:ravager",           {{80,80,80},{200,50,50},{0,0,0},{50,50,50},{60,60,60},{0,0,0}}},
+        {"minecraft:wither",            {{30,30,30},{200,50,50},{0,0,0},{15,15,15},{20,20,20},{0,0,0}}},
+        {"minecraft:ender_dragon",      {{30,20,40},{200,50,200},{0,0,0},{10,10,20},{10,5,20},{150,0,200}}},
+        {"minecraft:zoglin",            {{90,110,70},{200,50,50},{0,0,0},{60,80,40},{70,90,50},{100,60,40}}},
+        {"minecraft:vex",               {{160,160,180},{200,50,50},{0,0,0},{120,120,140},{140,140,160},{0,0,0}}},
+        {"minecraft:evoker",            {{140,120,100},{200,200,200},{0,0,0},{100,80,60},{120,100,80},{150,150,150}}},
+        {"minecraft:vindicator",        {{140,120,100},{200,200,200},{0,0,0},{100,80,60},{120,100,80},{0,0,0}}},
+        {"minecraft:pillager",          {{140,120,100},{200,200,200},{0,0,0},{100,80,60},{120,100,80},{80,80,80}}},
+        {"minecraft:warden",            {{20,40,80},{200,200,255},{0,0,0},{10,20,50},{10,20,50},{0,200,255}}},
+        {"minecraft:bogged",            {{100,120,80},{200,50,200},{0,0,0},{60,80,40},{80,100,60},{0,0,0}}},
+        {"minecraft:breeze",            {{150,180,200},{255,255,255},{0,0,0},{100,130,150},{120,150,170},{200,220,255}}},
+        {"minecraft:creaking",          {{100,80,60},{200,200,100},{0,0,0},{60,40,20},{80,60,40},{0,0,0}}},
+        {"minecraft:happy_ghast",       {{255,200,200},{255,255,255},{0,0,0},{100,50,50},{255,150,150},{255,100,100}}},
+        {"minecraft:illusioner",        {{140,120,100},{200,200,200},{0,0,0},{100,80,60},{120,100,80},{100,200,100}}},
+        {"minecraft:armor_stand",       {{160,140,120},{0,0,0},{0,0,0},{100,90,80},{130,115,100},{0,0,0}}},
+        // 友好/中立生物
+        {"minecraft:cow",               {{150,100,80},{255,255,255},{0,0,0},{80,50,30},{120,80,60},{200,200,200}}},
+        {"minecraft:pig",               {{200,150,150},{255,255,255},{0,0,0},{150,100,100},{180,130,130},{0,0,0}}},
+        {"minecraft:sheep",             {{200,200,200},{255,255,255},{0,0,0},{150,150,150},{180,180,180},{0,0,0}}},
+        {"minecraft:chicken",           {{220,200,180},{255,150,50},{0,0,0},{180,160,140},{200,180,160},{200,50,50}}},
+        {"minecraft:rabbit",            {{180,150,140},{255,255,255},{0,0,0},{130,100,90},{150,120,110},{0,0,0}}},
+        {"minecraft:wolf",              {{150,150,150},{255,255,255},{0,0,0},{100,100,100},{130,130,130},{0,0,0}}},
+        {"minecraft:fox",               {{200,120,60},{255,255,255},{0,0,0},{150,80,30},{180,100,40},{255,255,255}}},
+        {"minecraft:cat",               {{200,150,100},{100,200,100},{0,0,0},{150,100,60},{180,130,80},{0,0,0}}},
+        {"minecraft:ocelot",            {{200,180,100},{100,200,100},{0,0,0},{150,130,60},{180,160,80},{0,0,0}}},
+        {"minecraft:horse",             {{120,80,60},{255,255,255},{0,0,0},{80,50,30},{100,60,40},{0,0,0}}},
+        {"minecraft:donkey",            {{100,100,100},{255,255,255},{0,0,0},{60,60,60},{80,80,80},{0,0,0}}},
+        {"minecraft:mule",              {{120,100,80},{255,255,255},{0,0,0},{80,60,40},{100,80,60},{0,0,0}}},
+        {"minecraft:skeleton_horse",    {{150,160,170},{200,50,200},{0,0,0},{100,110,120},{130,140,150},{0,0,0}}},
+        {"minecraft:zombie_horse",      {{80,120,60},{200,50,50},{0,0,0},{50,80,30},{60,100,40},{0,0,0}}},
+        {"minecraft:bee",               {{220,180,50},{255,255,255},{0,0,0},{180,140,20},{200,160,30},{50,50,50}}},
+        {"minecraft:dolphin",           {{100,140,180},{255,255,255},{0,0,0},{60,100,140},{80,120,160},{0,0,0}}},
+        {"minecraft:squid",             {{100,120,150},{255,255,255},{0,0,0},{60,80,110},{80,100,130},{0,0,0}}},
+        {"minecraft:glow_squid",        {{80,180,200},{0,200,200},{0,0,0},{40,140,160},{60,160,180},{0,255,200}}},
+        {"minecraft:turtle",            {{80,140,80},{255,255,255},{0,0,0},{40,100,40},{60,120,60},{0,0,0}}},
+        {"minecraft:panda",             {{200,200,200},{255,255,255},{0,0,0},{150,150,150},{180,180,180},{50,50,50}}},
+        {"minecraft:polar_bear",        {{220,210,190},{255,255,255},{0,0,0},{180,170,150},{200,190,170},{0,0,0}}},
+        {"minecraft:goat",              {{180,170,160},{255,200,100},{0,0,0},{140,130,120},{160,150,140},{0,0,0}}},
+        {"minecraft:frog",              {{80,180,80},{255,255,200},{0,0,0},{40,140,40},{60,160,60},{0,0,0}}},
+        {"minecraft:tadpole",           {{60,80,60},{0,0,0},{0,0,0},{30,50,30},{40,60,40},{0,0,0}}},
+        {"minecraft:parrot",            {{50,180,50},{255,255,255},{0,0,0},{30,140,30},{40,160,40},{200,200,50}}},
+        {"minecraft:llama",             {{180,160,130},{255,255,255},{0,0,0},{140,120,90},{160,140,110},{0,0,0}}},
+        {"minecraft:trader_llama",      {{160,140,110},{255,255,255},{0,0,0},{120,100,70},{140,120,90},{100,200,100}}},
+        {"minecraft:wandering_trader",  {{150,120,100},{255,255,255},{0,0,0},{110,80,60},{130,100,80},{0,150,200}}},
+        {"minecraft:strider",           {{200,100,100},{255,200,200},{0,0,0},{150,60,60},{180,80,80},{0,0,0}}},
+        {"minecraft:iron_golem",        {{150,120,100},{255,255,255},{0,0,0},{100,80,60},{120,100,80},{80,80,100}}},
+        {"minecraft:snow_golem",        {{220,220,240},{255,255,255},{0,0,0},{180,180,200},{200,200,220},{255,150,50}}},
+        {"minecraft:villager",          {{140,110,80},{255,255,255},{0,0,0},{100,70,40},{120,90,60},{150,100,50}}},
+        {"minecraft:villager_v2",       {{140,110,80},{255,255,255},{0,0,0},{100,70,40},{120,90,60},{150,100,50}}},
+        {"villager",                    {{140,110,80},{255,255,255},{0,0,0},{100,70,40},{120,90,60},{150,100,50}}},
+        {"minecraft:mooshroom",         {{200,100,100},{255,255,255},{0,0,0},{150,60,60},{180,80,80},{200,50,50}}},
+        {"minecraft:sniffer",           {{80,120,160},{255,255,200},{0,0,0},{40,80,120},{60,100,140},{0,0,0}}},
+        {"minecraft:camel",             {{180,160,130},{255,255,255},{0,0,0},{140,120,90},{160,140,110},{100,80,50}}},
+        {"minecraft:armadillo",         {{150,120,80},{255,255,255},{0,0,0},{110,80,40},{130,100,60},{0,0,0}}},
+        {"minecraft:allay",             {{150,180,220},{255,255,200},{0,0,0},{100,130,170},{120,150,190},{200,200,255}}},
+        {"minecraft:axolotl",          {{200,120,180},{255,200,200},{0,0,0},{150,80,130},{180,100,150},{0,0,0}}},
+        {"minecraft:bat",              {{80,60,40},{255,255,255},{0,0,0},{50,30,20},{60,40,30},{0,0,0}}},
+        {"minecraft:pufferfish",       {{200,200,100},{255,255,255},{0,0,0},{150,150,50},{180,180,80},{0,0,0}}},
+        {"minecraft:tropical_fish",    {{255,150,50},{0,0,0},{255,255,255},{200,80,0},{255,200,100},{100,200,255}}},
+        // 玩家
+        {"player",                      {{180,140,100},{255,255,255},{80,60,40},{120,80,60},{100,70,40},{0,0,0}}},
+    };
+
+    // 生物类型→头像文件名映射（用于 WIC 加载 PNG）
+    inline std::unordered_map<std::string, std::string> g_typeToFaceFile = {
+        // 文件名规则: {Name}Face.png，部分特殊处理
+        {"minecraft:zombie",            "ZombieFace.png"},
+        {"minecraft:skeleton",          "SkeletonFace.png"},
+        {"minecraft:creeper",           "CreeperFace.png"},
+        {"minecraft:spider",            "SpiderFace.png"},
+        {"minecraft:cave_spider",       "CaveSpiderFace.png"},
+        {"minecraft:enderman",          "EndermanFace.png"},
+        {"minecraft:blaze",             "BlazeFace.png"},
+        {"minecraft:ghast",             "GhastFace.png"},
+        {"minecraft:slime",             "SlimeFace.png"},
+        {"minecraft:magma_cube",        "MagmaCubeFace.png"},
+        {"minecraft:witch",             "WitchFace.png"},
+        {"minecraft:guardian",          "GuardianFace.png"},
+        {"minecraft:elder_guardian",    "ElderGuardianFace.png"},
+        {"minecraft:silverfish",        "SilverfishFace.png"},
+        {"minecraft:endermite",         "EndermiteFace.png"},
+        {"minecraft:shulker",           "ShulkerFace.png"},
+        {"minecraft:phantom",           "PhantomFace.png"},
+        {"minecraft:drowned",           "DrownedFace.png"},
+        {"minecraft:husk",              "HuskFace.png"},
+        {"minecraft:stray",             "StrayFace.png"},
+        {"minecraft:wither_skeleton",   "WitherSkeletonFace.png"},
+        {"minecraft:zombie_villager",   "ZombieVillagerFace.png"},
+        {"minecraft:zombified_piglin",  "ZombiePigmanFace.png"},
+        {"minecraft:piglin",            "PiglinFace.png"},
+        {"minecraft:piglin_brute",      "PiglinBruteFace.png"},
+        {"minecraft:hoglin",            "HoglinFace.png"},
+        {"minecraft:zoglin",            "ZoglinFace.png"},
+        {"minecraft:ravager",           "RavagerFace.png"},
+        {"minecraft:wither",            "WitherFace.png"},
+        {"minecraft:ender_dragon",      "EnderdragonFace.png"},
+        {"minecraft:vex",               "VexFace.png"},
+        {"minecraft:evoker",            "EvokerFace.png"},
+        {"minecraft:vindicator",        "VindicatorFace.png"},
+        {"minecraft:pillager",          "PillagerFace.png"},
+        {"minecraft:warden",            "WardenFace.png"},
+        {"minecraft:bogged",            "BoggedPotatoFace.png"},
+        {"minecraft:breeze",            "BreezeFace.png"},
+        {"minecraft:happy_ghast",       "HappyGhastFace.png"},
+        {"minecraft:creaking",          "CreakingFace.png"},
+        {"minecraft:illusioner",        "IllusionerFace.png"},
+        {"minecraft:cow",               "CowFace.png"},
+        {"minecraft:pig",               "PigFace.png"},
+        {"minecraft:sheep",             "SheepFace.png"},
+        {"minecraft:chicken",           "ChickenFace.png"},
+        {"minecraft:rabbit",            "RabbitFace.png"},
+        {"minecraft:wolf",              "WolfFace.png"},
+        {"minecraft:fox",               "FoxFace.png"},
+        {"minecraft:cat",               "CatFace.png"},
+        {"minecraft:ocelot",            "OcelotFace.png"},
+        {"minecraft:horse",             "HorseFace.png"},
+        {"minecraft:donkey",            "DonkeyFace.png"},
+        {"minecraft:mule",              "MuleFace.png"},
+        {"minecraft:skeleton_horse",    "SkeletonHorseFace.png"},
+        {"minecraft:zombie_horse",      "ZombieHorseFace.png"},
+        {"minecraft:bee",               "BeeFace.png"},
+        {"minecraft:dolphin",           "DolphinFace.png"},
+        {"minecraft:squid",             "SquidFace.png"},
+        {"minecraft:glow_squid",        "GlowSquidFace.png"},
+        {"minecraft:turtle",            "TurtleFace.png"},
+        {"minecraft:panda",             "PandaFace.png"},
+        {"minecraft:polar_bear",        "PolarBearFace.png"},
+        {"minecraft:goat",              "GoatFace.png"},
+        {"minecraft:frog",              "FrogFace.png"},
+        {"minecraft:tadpole",           "TadpoleFace.png"},
+        {"minecraft:parrot",            "ParrotFace.png"},
+        {"minecraft:llama",             "LlamaFace.png"},
+        {"minecraft:trader_llama",      "TraderLlamaFace.png"},
+        {"minecraft:wandering_trader",  "WanderingTraderFace.png"},
+        {"minecraft:strider",           "StriderFace.png"},
+        {"minecraft:iron_golem",        "IronGolemFace.png"},
+        {"minecraft:snow_golem",        "SnowGolemFace.png"},
+        {"minecraft:villager",          "VillagerFace.png"},
+        {"minecraft:villager_v2",       "VillagerFace.png"},
+        {"villager",                    "VillagerFace.png"},
+        {"minecraft:mooshroom",         "MooshroomFace.png"},
+        {"minecraft:sniffer",           "SnifferFace.png"},
+        {"minecraft:camel",             "CamelFace.png"},
+        {"minecraft:armadillo",         "ArmadilloFace.png"},
+        {"minecraft:armor_stand",       "ArmorStandFace.png"},
+        {"minecraft:allay",             "AllayFace.png"},
+        {"minecraft:axolotl",           "AxolotlFace.png"},
+        {"minecraft:bat",               "BatFace.png"},
+        {"minecraft:pufferfish",        "PufferfishFace.png"},
+        // 鱼（使用 Body.png）
+        {"minecraft:cod",               "CodBody.png"},
+        {"minecraft:salmon",            "SalmonBody.png"},
+        {"minecraft:tropical_fish",     "TropicalFishBody.png"},
+        // 玩家
+        {"player",                      "SteveFace.png"},
+    };
+
+    // 贴图缓存
+    inline std::unordered_map<std::string, ID3D11ShaderResourceView*> g_headTextures;
+    inline std::unordered_map<std::string, ID3D11ShaderResourceView*> g_playerHeadTextures;
+    inline bool g_tabHeld = false;
+
+    // 程序化生成 12x12 RGBA 面孔贴图
+    inline ID3D11ShaderResourceView* CreateProgrammaticFaceTexture(const MobFace& face) {
+        const int S = FACE_SIZE;
+        uint8_t pixels[S * S * 4];
+        // 面孔像素模板 (S=12)
+        // 索引映射: 0=hair,1=skin,2=eye,3=pupil,4=mouth,5=accent
+        // 颜色来源数组
+        const uint8_t* cols[6] = {face.hair, face.skin, face.eye, face.eyePupil, face.mouth, face.accent};
+        // 12x12 模板: 每个 cell 是 cols 索引
+        const int tmpl[12][12] = {
+            {0,0,0,0,0,0,0,0,0,0,0,0},
+            {0,1,1,1,1,1,1,1,1,1,1,0},
+            {0,1,1,1,1,1,1,1,1,1,1,0},
+            {0,1,1,1,1,1,1,1,1,1,1,0},
+            {0,1,1,2,2,1,1,2,2,1,1,0},
+            {0,1,1,3,3,1,1,3,3,1,1,0},
+            {0,1,1,1,1,1,1,1,1,1,1,0},
+            {0,1,1,1,1,4,4,1,1,1,1,0},
+            {0,1,1,1,4,4,4,4,1,1,1,0},
+            {0,1,1,1,1,1,1,1,1,1,1,0},
+            {0,1,1,1,1,1,1,1,1,1,1,0},
+            {0,0,0,0,0,0,0,0,0,0,0,0},
+        };
+        for (int y = 0; y < S; y++) {
+            for (int x = 0; x < S; x++) {
+                int ci = tmpl[y][x];
+                int di = (y * S + x) * 4;
+                pixels[di+0] = cols[ci][0];
+                pixels[di+1] = cols[ci][1];
+                pixels[di+2] = cols[ci][2];
+                pixels[di+3] = 255;
+            }
+        }
+        D3D11_TEXTURE2D_DESC desc = {};
+        desc.Width = S; desc.Height = S;
+        desc.MipLevels = 1; desc.ArraySize = 1;
+        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        desc.SampleDesc.Count = 1; desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        D3D11_SUBRESOURCE_DATA init = {};
+        init.pSysMem = pixels; init.SysMemPitch = S * 4;
+        ID3D11Texture2D* tex = nullptr;
+        ID3D11ShaderResourceView* srv = nullptr;
+        if (SUCCEEDED(g_pd3dDevice->CreateTexture2D(&desc, &init, &tex))) {
+            g_pd3dDevice->CreateShaderResourceView(tex, nullptr, &srv);
+            tex->Release();
+        }
+        return srv;
+    }
+
+    // WIC 加载 PNG 文件为 D3D11 贴图
+    inline ID3D11ShaderResourceView* LoadPNGAsTexture(const std::string& filePath) {
+        HRESULT hr;
+        IWICImagingFactory* factory = nullptr;
+        hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+        if (FAILED(hr)) return nullptr;
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, filePath.c_str(), -1, nullptr, 0);
+        std::wstring wpath(wlen, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, filePath.c_str(), -1, &wpath[0], wlen);
+        IWICBitmapDecoder* decoder = nullptr;
+        hr = factory->CreateDecoderFromFilename(wpath.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, &decoder);
+        if (FAILED(hr)) { factory->Release(); return nullptr; }
+        IWICBitmapFrameDecode* frame = nullptr;
+        hr = decoder->GetFrame(0, &frame);
+        if (FAILED(hr)) { decoder->Release(); factory->Release(); return nullptr; }
+        IWICFormatConverter* converter = nullptr;
+        bool converterReady = false;
+        if (SUCCEEDED(factory->CreateFormatConverter(&converter))) {
+            converterReady = SUCCEEDED(converter->Initialize(frame, GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeCustom));
+        }
+        UINT w, h;
+        frame->GetSize(&w, &h);
+        if (w == 0 || h == 0) { converterReady = false; }
+        ID3D11ShaderResourceView* srv = nullptr;
+        if (converterReady) {
+            std::vector<uint8_t> pixels(w * h * 4);
+            if (SUCCEEDED(converter->CopyPixels(nullptr, w * 4, (UINT)pixels.size(), pixels.data()))) {
+                D3D11_TEXTURE2D_DESC desc = {};
+                desc.Width = w; desc.Height = h;
+                desc.MipLevels = 1; desc.ArraySize = 1;
+                desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+                desc.SampleDesc.Count = 1; desc.Usage = D3D11_USAGE_DEFAULT;
+                desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+                D3D11_SUBRESOURCE_DATA init = {};
+                init.pSysMem = pixels.data(); init.SysMemPitch = w * 4;
+                ID3D11Texture2D* tex = nullptr;
+                if (SUCCEEDED(g_pd3dDevice->CreateTexture2D(&desc, &init, &tex))) {
+                    g_pd3dDevice->CreateShaderResourceView(tex, nullptr, &srv);
+                    tex->Release();
+                }
+            }
+        }
+        if (converter) converter->Release();
+        frame->Release(); decoder->Release(); factory->Release();
+        return srv;
+    }
+
+    // 获取 DLL 所在目录（含尾部反斜杠）
+    inline std::string GetModDir() {
+        static std::string dir = []() {
+            HMODULE hm = GetModuleHandleA("ChiyanMap.dll");
+            if (!hm) return std::string("mods/ChiyanMap/");
+            char buf[MAX_PATH];
+            DWORD len = GetModuleFileNameA(hm, buf, MAX_PATH);
+            if (len == 0) return std::string("mods/ChiyanMap/");
+            std::string path(buf, len);
+            auto pos = path.find_last_of("\\/");
+            if (pos != std::string::npos) path = path.substr(0, pos + 1);
+            return path;
+        }();
+        return dir;
+    }
+
+    // 获取生物头像 SRV（优先从 PNG 加载，失败则程序化生成）
+    inline ID3D11ShaderResourceView* GetOrCreateFaceTexture(const std::string& typeName) {
+        auto it = g_headTextures.find(typeName);
+        if (it != g_headTextures.end()) return it->second;
+
+        ID3D11ShaderResourceView* srv = nullptr;
+        // 尝试从 PNG 加载
+        auto fileIt = g_typeToFaceFile.find(typeName);
+        if (fileIt != g_typeToFaceFile.end()) {
+            std::string path = GetModDir() + "heads/" + fileIt->second;
+            srv = LoadPNGAsTexture(path);
+        }
+        // 失败则程序化生成
+        if (!srv) {
+            auto faceIt = g_typeToFace.find(typeName);
+            if (faceIt != g_typeToFace.end()) {
+                srv = CreateProgrammaticFaceTexture(faceIt->second);
+            }
+        }
+        g_headTextures[typeName] = srv;
+        return srv;
+    }
+
+    // 获取玩家皮肤头部贴图（从缓存的 8x8 RGB 像素创建）
+    inline ID3D11ShaderResourceView* GetOrCreatePlayerHeadTexture(const std::string& uuid) {
+        auto it = g_playerHeadTextures.find(uuid);
+        if (it != g_playerHeadTextures.end()) return it->second;
+
+        PlayerSkinHead head;
+        {
+            std::lock_guard<std::mutex> lock(g_playerSkinMutex);
+            auto hit = g_playerSkinHeads.find(uuid);
+            if (hit == g_playerSkinHeads.end() || !hit->second.valid) return GetOrCreateFaceTexture("player");
+            head = hit->second;
+        }
+
+        ID3D11ShaderResourceView* srv = nullptr;
+        // 将 8x8 放大到 FACE_SIZE x FACE_SIZE (最近邻采样)
+        std::vector<uint8_t> pixels(FACE_SIZE * FACE_SIZE * 4);
+        float scale = (float)FACE_SIZE / 8.0f;
+        for (int y = 0; y < FACE_SIZE; y++) {
+            for (int x = 0; x < FACE_SIZE; x++) {
+                int sx = (int)(x / scale);
+                int sy = (int)(y / scale);
+                if (sx > 7) sx = 7; if (sy > 7) sy = 7;
+                int si = (sy * 8 + sx) * 4;
+                int di = (y * FACE_SIZE + x) * 4;
+                pixels[di+0] = head.pixels[si+0];
+                pixels[di+1] = head.pixels[si+1];
+                pixels[di+2] = head.pixels[si+2];
+                pixels[di+3] = head.pixels[si+3];
+            }
+        }
+
+        D3D11_TEXTURE2D_DESC desc = {};
+        desc.Width = FACE_SIZE; desc.Height = FACE_SIZE;
+        desc.MipLevels = 1; desc.ArraySize = 1;
+        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        desc.SampleDesc.Count = 1; desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        D3D11_SUBRESOURCE_DATA init = {};
+        init.pSysMem = pixels.data(); init.SysMemPitch = FACE_SIZE * 4;
+        ID3D11Texture2D* tex = nullptr;
+        if (SUCCEEDED(g_pd3dDevice->CreateTexture2D(&desc, &init, &tex))) {
+            g_pd3dDevice->CreateShaderResourceView(tex, nullptr, &srv);
+            tex->Release();
+        }
+        g_playerHeadTextures[uuid] = srv;
+        return srv;
+    }
 
     // ==========================================
     // [另辟蹊径] Windows Raw Input 硬件级欺骗器
@@ -150,6 +545,14 @@ namespace DX11Hook {
         g_regionSRVs.clear();
         for(auto& p : g_regionTextures) if(p.second) p.second->Release();
         g_regionTextures.clear();
+        for(auto& p : g_headTextures) if(p.second) p.second->Release();
+        g_headTextures.clear();
+        for(auto& p : g_playerHeadTextures) if(p.second) p.second->Release();
+        g_playerHeadTextures.clear();
+        {
+            std::lock_guard<std::mutex> lock(g_playerSkinMutex);
+            g_playerSkinHeads.clear();
+        }
         if (g_imguiInitialized) {
             if (g_mapTextureView) { g_mapTextureView->Release(); g_mapTextureView = nullptr; }
             if (g_mapTexture) { g_mapTexture->Release(); g_mapTexture = nullptr; }
@@ -202,6 +605,9 @@ namespace DX11Hook {
             if (ImGui::GetCurrentContext()) {
                 isTyping = ImGui::GetIO().WantCaptureKeyboard;
             }
+
+            if (uMsg == WM_KEYDOWN && wParam == VK_TAB) { if (!isTyping || MapRenderState::IsUIActive()) g_tabHeld = true; }
+            if (uMsg == WM_KEYUP && wParam == VK_TAB) { g_tabHeld = false; }
 
             if (uMsg == WM_KEYDOWN && wParam == 0x4D && !isTyping) {
                 CURSORINFO ci = {}; ci.cbSize = sizeof(CURSORINFO);
@@ -261,8 +667,13 @@ namespace DX11Hook {
             if (MapRenderState::IsUIActive()) {
                 ClipCursor(NULL);
                 if (uMsg == WM_KEYDOWN && wParam == VK_ESCAPE) {
-                    MapRenderState::showBigMap = false;
-                    MapRenderState::showWaypointUI = false; 
+                    if (MapRenderState::showPositionSettings) {
+                        MapRenderState::showPositionSettings = false;
+                        MapRenderState::showBigMap = true;
+                    } else {
+                        MapRenderState::showBigMap = false;
+                        MapRenderState::showWaypointUI = false;
+                    }
                     return 1;
                 }
                 if (uMsg == WM_INPUT || uMsg == WM_INPUT_DEVICE_CHANGE) return 1;
@@ -534,23 +945,10 @@ namespace DX11Hook {
     // ==========================================
     // [小地图 UI 渲染引擎]
     // ==========================================
-    inline void RenderImGuiXaeroMap() {
-        if (!MapRenderState::showMiniMap) return; 
-        if (!g_mapTextureView) return;
-        UpdateMapTexture();
-
-        ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
-        
-        float IM_MAP_R = 135.0f; 
-        float IM_MAP_MARGIN = 20.0f;
-        // 强制向下取整，防止 ImGui 渲染到亚像素网格导致 DX11 采样边缘发毛
-        float cx = std::floor(ImGui::GetIO().DisplaySize.x - IM_MAP_MARGIN - IM_MAP_R);
-        float cy = std::floor(IM_MAP_MARGIN + IM_MAP_R);
-
+    inline void RenderMiniMapBody(ImDrawList* draw_list, float cx, float cy, float IM_MAP_R) {
         float pX = g_smoothPX;
         float pZ = g_smoothPZ;
 
-        // 【极致防撕裂核心】UV 偏移只以最新的同步 Texture 中心为基准运算！
         float dx = pX - g_textureCenterX;
         float dz = pZ - g_textureCenterZ;
 
@@ -609,7 +1007,6 @@ namespace DX11Hook {
 
         float scale = IM_MAP_R / ZOOM_RADIUS; 
         for (const auto& ent : s_cachedEntities) {
-            // 让实体也跟随绝对平滑的坐标系移动
             float edx = ent.x - pX;
             float edz = ent.z - pZ;
             float ex = cx + edx * scale;
@@ -624,12 +1021,28 @@ namespace DX11Hook {
             }
 
             if (inBounds) {
-                ImU32 col;
-                if (ent.type == 0) col = IM_COL32(255, 255, 255, 255);
-                else if (ent.type == 1) col = IM_COL32(255, 50, 50, 255);
-                else if (ent.type == 2) col = IM_COL32(50, 255, 50, 255);
-                else col = IM_COL32(255, 255, 50, 255);
-                draw_list->AddRectFilled(ImVec2(ex - 2, ez - 2), ImVec2(ex + 2, ez + 2), col);
+                ID3D11ShaderResourceView* faceSrv = nullptr;
+                if (ent.type == 0) {
+                    faceSrv = GetOrCreatePlayerHeadTexture(ent.uuid);
+                    if (!faceSrv) faceSrv = GetOrCreateFaceTexture("player");
+                } else if (ent.type == 3) {
+                } else {
+                    faceSrv = GetOrCreateFaceTexture(ent.entityType);
+                }
+
+                if (faceSrv) {
+                    float hs = 6.0f * (IM_MAP_R / 135.0f);
+                    if (ent.type == 0) hs *= 1.3f;
+                    if (g_tabHeld) hs *= 2.0f;
+                    draw_list->AddImage((void*)faceSrv, ImVec2(ex - hs, ez - hs), ImVec2(ex + hs, ez + hs));
+                } else {
+                    ImU32 col;
+                    if (ent.type == 0) col = IM_COL32(255, 255, 255, 255);
+                    else if (ent.type == 1) col = IM_COL32(255, 50, 50, 255);
+                    else if (ent.type == 2) col = IM_COL32(50, 255, 50, 255);
+                    else col = IM_COL32(255, 255, 50, 255);
+                    draw_list->AddRectFilled(ImVec2(ex - 2, ez - 2), ImVec2(ex + 2, ez + 2), col);
+                }
             }
         }
 
@@ -682,6 +1095,27 @@ namespace DX11Hook {
 
         draw_list->AddTriangleFilled(rotate(0, -10.0f), rotate(-7.0f, 10.0f), rotate(7.0f, 10.0f), IM_COL32(0, 0, 0, 255));
         draw_list->AddTriangleFilled(rotate(0, -8.0f), rotate(-5.0f, 8.0f), rotate(5.0f, 8.0f), IM_COL32(220, 20, 20, 255));
+    }
+
+    inline void RenderImGuiXaeroMap() {
+        if (!MapRenderState::showMiniMap) return; 
+        if (!g_mapTextureView) return;
+        UpdateMapTexture();
+
+        ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
+        
+        float IM_MAP_R = MapRenderState::minimapSize; 
+        float IM_MAP_MARGIN = 20.0f;
+        float ox = MapRenderState::showPositionSettings ? MapRenderState::tempMinimapOffsetX : MapRenderState::minimapOffsetX;
+        float oy = MapRenderState::showPositionSettings ? MapRenderState::tempMinimapOffsetY : MapRenderState::minimapOffsetY;
+        float dsx = ImGui::GetIO().DisplaySize.x;
+        float dsy = ImGui::GetIO().DisplaySize.y;
+        ox = std::clamp(ox, -(dsx / 2 - IM_MAP_R), dsx / 2 - IM_MAP_R);
+        oy = std::clamp(oy, -(dsy / 2 - IM_MAP_R), dsy / 2 - IM_MAP_R);
+        float cx = std::floor(dsx / 2 + ox);
+        float cy = std::floor(dsy / 2 + oy);
+
+        RenderMiniMapBody(draw_list, cx, cy, IM_MAP_R);
     }
 
     inline void UpdateRegionTexture(uint64_t hash, int& texCount) {
@@ -944,6 +1378,41 @@ namespace DX11Hook {
         draw_list->AddTriangleFilled(rotate(0, -10.0f), rotate(-7.0f, 10.0f), rotate(7.0f, 10.0f), IM_COL32(0, 0, 0, 255));
         draw_list->AddTriangleFilled(rotate(0, -8.0f), rotate(-5.0f, 8.0f), rotate(5.0f, 8.0f), IM_COL32(220, 20, 20, 255));
 
+        if (g_tabHeld) {
+            static std::vector<RadarEntity> s_cachedEntities;
+            if (g_radarUpdated.load()) {
+                s_cachedEntities = g_radarEntities;
+                g_radarUpdated.store(false);
+            }
+            for (const auto& ent : s_cachedEntities) {
+                float wx = cx + (ent.x - g_smoothPX) * MapRenderState::bigMapZoom + MapRenderState::bigMapOffsetX;
+                float wz = cy + (ent.z - g_smoothPZ) * MapRenderState::bigMapZoom + MapRenderState::bigMapOffsetZ;
+                if (wx < -50.0f || wx > io.DisplaySize.x + 50.0f || wz < -50.0f || wz > io.DisplaySize.y + 50.0f) continue;
+
+                ID3D11ShaderResourceView* faceSrv = nullptr;
+                if (ent.type == 0) {
+                    faceSrv = GetOrCreatePlayerHeadTexture(ent.uuid);
+                    if (!faceSrv) faceSrv = GetOrCreateFaceTexture("player");
+                } else if (ent.type != 3) {
+                    faceSrv = GetOrCreateFaceTexture(ent.entityType);
+                }
+
+                float is = 8.0f;
+                if (ent.type == 0) is *= 1.3f;
+
+                if (faceSrv) {
+                    draw_list->AddImage((void*)faceSrv, ImVec2(wx - is, wz - is), ImVec2(wx + is, wz + is));
+                } else {
+                    ImU32 col;
+                    if (ent.type == 0) col = IM_COL32(255, 255, 255, 255);
+                    else if (ent.type == 1) col = IM_COL32(255, 50, 50, 255);
+                    else if (ent.type == 2) col = IM_COL32(50, 255, 50, 255);
+                    else col = IM_COL32(255, 255, 50, 255);
+                    draw_list->AddRectFilled(ImVec2(wx - 2, wz - 2), ImVec2(wx + 2, wz + 2), col);
+                }
+            }
+        }
+
         static std::string selectedWpId = "";
         static bool triggerWpMenu = false;
         {
@@ -1013,7 +1482,7 @@ namespace DX11Hook {
             ImGui::OpenPopup("SettingsPopup");
         }
         
-        ImGui::SetNextWindowSize(ImVec2(220, 160));
+        ImGui::SetNextWindowSize(ImVec2(220, 200));
         if (ImGui::BeginPopup("SettingsPopup")) {
             ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), LanguageManager::GetText("SIDEBAR_OPS"));
             ImGui::Separator();
@@ -1022,6 +1491,10 @@ namespace DX11Hook {
                 LanguageManager::SaveConfig();
             }
             if (ImGui::Checkbox(LanguageManager::GetText("SQUARE_MINIMAP"), &MapRenderState::isSquareMap)) {
+                LanguageManager::SaveConfig();
+            }
+            ImGui::Spacing();
+            if (ImGui::SliderFloat(LanguageManager::GetText("MINIMAP_SIZE"), &MapRenderState::minimapSize, 60.0f, 300.0f, "%.0f")) {
                 LanguageManager::SaveConfig();
             }
             ImGui::Spacing();
@@ -1051,12 +1524,22 @@ namespace DX11Hook {
             }
             ImGui::PopItemWidth();
             
+            ImGui::Spacing();
+            ImGui::Separator();
+            if (ImGui::Button(LanguageManager::GetText("ADJUST_POSITION"), ImVec2(ImGui::GetContentRegionAvail().x, 35.0f))) {
+                MapRenderState::tempMinimapOffsetX = MapRenderState::minimapOffsetX;
+                MapRenderState::tempMinimapOffsetY = MapRenderState::minimapOffsetY;
+                MapRenderState::showPositionSettings = true;
+                MapRenderState::showBigMap = false;
+                ImGui::CloseCurrentPopup();
+            }
+            
             ImGui::EndPopup();
         }
         
         ImGui::EndChild();
         ImGui::PopStyleColor();
-
+        
         static float rcWorldX = 0.0f;
         static float rcWorldZ = 0.0f;
 
@@ -1419,6 +1902,7 @@ namespace DX11Hook {
                 
                 InitMapTexture(); 
                 g_imguiInitialized = true;
+                g_brdPresent = (GetModuleHandleA("BetterRenderDragon.dll") != nullptr);
             }
         }
 
@@ -1438,6 +1922,50 @@ namespace DX11Hook {
 
                 if (MapRenderState::showWaypointUI) {
                     RenderImGuiWaypointUI();
+                }
+
+                if (MapRenderState::showPositionSettings) {
+                    ImGuiIO& io2 = ImGui::GetIO();
+                    float mmr = MapRenderState::minimapSize;
+                    float sx = io2.DisplaySize.x;
+                    float sy = io2.DisplaySize.y;
+                    float maxX = sx / 2 - mmr;
+                    float maxY = sy / 2 - mmr;
+                    MapRenderState::tempMinimapOffsetX = std::clamp(MapRenderState::tempMinimapOffsetX, -maxX, maxX);
+                    MapRenderState::tempMinimapOffsetY = std::clamp(MapRenderState::tempMinimapOffsetY, -maxY, maxY);
+
+                    ImGui::SetNextWindowPos(ImVec2(sx * 0.5f, sy * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+                    ImGui::SetNextWindowSize(ImVec2(300, 200));
+                    ImGui::SetNextWindowBgAlpha(0.75f);
+                    ImGuiWindowFlags posFlags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar;
+                    bool open = true;
+                    if (ImGui::Begin("PositionSettings", &open, posFlags)) {
+                        ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), LanguageManager::GetText("POSITION_SETTINGS"));
+                        ImGui::Separator();
+                        ImGui::Spacing();
+                        
+                        ImGui::SliderFloat(LanguageManager::GetText("POSITION_X"), &MapRenderState::tempMinimapOffsetX, -maxX, maxX, "%.0f");
+                        ImGui::SliderFloat(LanguageManager::GetText("POSITION_Y"), &MapRenderState::tempMinimapOffsetY, -maxY, maxY, "%.0f");
+                        
+                        ImGui::Spacing();
+                        ImGui::Separator();
+                        ImGui::Spacing();
+                        
+                        float btnW = (ImGui::GetContentRegionAvail().x - 10.0f) * 0.5f;
+                        if (ImGui::Button(LanguageManager::GetText("SAVE_EXIT"), ImVec2(btnW, 35.0f))) {
+                            MapRenderState::minimapOffsetX = MapRenderState::tempMinimapOffsetX;
+                            MapRenderState::minimapOffsetY = MapRenderState::tempMinimapOffsetY;
+                            LanguageManager::SaveConfig();
+                            MapRenderState::showPositionSettings = false;
+                            MapRenderState::showBigMap = true;
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::Button(LanguageManager::GetText("DONT_SAVE"), ImVec2(btnW, 35.0f))) {
+                            MapRenderState::showPositionSettings = false;
+                            MapRenderState::showBigMap = true;
+                        }
+                    }
+                    ImGui::End();
                 }
 
                 ImGui::Render();
@@ -1462,7 +1990,10 @@ namespace DX11Hook {
                     D3D11_RESOURCE_FLAGS d3d11Flags = {D3D11_BIND_RENDER_TARGET};
 
                     if (SUCCEEDED(g_d3d11On12Device->CreateWrappedResource(
-                        d3d12BackBuffer, &d3d11Flags, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_PRESENT, __uuidof(ID3D11Resource), (void**)&wrappedBackBuffer)))
+                        d3d12BackBuffer, &d3d11Flags,
+                        D3D12_RESOURCE_STATE_RENDER_TARGET,
+                        g_brdPresent ? D3D12_RESOURCE_STATE_RENDER_TARGET : D3D12_RESOURCE_STATE_PRESENT,
+                        __uuidof(ID3D11Resource), (void**)&wrappedBackBuffer)))
                     {
                         ID3D11RenderTargetView* rtv = nullptr;
                         g_pd3dDevice->CreateRenderTargetView(wrappedBackBuffer, NULL, &rtv);

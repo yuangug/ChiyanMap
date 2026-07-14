@@ -29,6 +29,7 @@ namespace LanguageManager {
     "SIDEBAR_OPS": "[ Settings ]",
     "SHOW_MINIMAP": "Show Minimap",
     "SQUARE_MINIMAP": "Square Minimap",
+    "MINIMAP_SIZE": "Minimap Size",
     "CENTER_CAMERA": "Center Camera to Player",
     "NETHER_WARNING": "[ Nether magnetic field is too strong to draw map ]",
     "COMPASS_N": "N",
@@ -58,6 +59,12 @@ namespace LanguageManager {
     "WP_NAME": "Name",
     "WP_COLOR": "Color",
     "WP_DEFAULT_NAME": "New Waypoint",
+    "ADJUST_POSITION": "Adjust Position",
+    "POSITION_SETTINGS": "Minimap Position",
+    "POSITION_X": "X Offset",
+    "POSITION_Y": "Y Offset",
+    "SAVE_EXIT": "Save && Exit",
+    "DONT_SAVE": "Don't Save",
     "LANG_SELECT": "Language"
 })json"},
         {"zh_CN", R"json({
@@ -72,6 +79,7 @@ namespace LanguageManager {
     "SIDEBAR_OPS": "[ \u64cd\u4f5c\u9762\u677f ]",
     "SHOW_MINIMAP": "\u663e\u793a\u53f3\u4e0a\u89d2\u5c0f\u5730\u56fe",
     "SQUARE_MINIMAP": "\u4f7f\u7528\u65b9\u5f62\u5c0f\u5730\u56fe",
+    "MINIMAP_SIZE": "\u5c0f\u5730\u56fe\u5927\u5c0f",
     "CENTER_CAMERA": "\u89c6\u89d2\u56de\u4e2d\u81f3\u73a9\u5bb6",
     "NETHER_WARNING": "\u3010 \u4e0b\u754c\u78c1\u573a\u5e72\u6270\u8fc7\u5f3a\uff0c\u65e0\u6cd5\u7ed8\u5236\u5730\u56fe \u3011",
     "COMPASS_N": "\u5317",
@@ -101,6 +109,12 @@ namespace LanguageManager {
     "WP_NAME": "\u540d\u79f0",
     "WP_COLOR": "\u989c\u8272",
     "WP_DEFAULT_NAME": "\u65b0\u5730\u6807",
+    "ADJUST_POSITION": "\u4f4d\u7f6e\u8c03\u6574",
+    "POSITION_SETTINGS": "\u5c0f\u5730\u56fe\u4f4d\u7f6e\u8bbe\u7f6e",
+    "POSITION_X": "X \u504f\u79fb",
+    "POSITION_Y": "Y \u504f\u79fb",
+    "SAVE_EXIT": "\u4fdd\u5b58\u5e76\u9000\u51fa",
+    "DONT_SAVE": "\u4e0d\u4fdd\u5b58",
     "LANG_SELECT": "\u8bed\u8a00"
 })json"},
         {"zh_TW", R"json({
@@ -115,6 +129,7 @@ namespace LanguageManager {
     "SIDEBAR_OPS": "[ \u64cd\u4f5c\u9762\u677f ]",
     "SHOW_MINIMAP": "\u986f\u793a\u53f3\u4e0a\u89d2\u5c0f\u5730\u5716",
     "SQUARE_MINIMAP": "\u4f7f\u7528\u65b9\u5f62\u5c0f\u5730\u5716",
+    "MINIMAP_SIZE": "\u5c0f\u5730\u5716\u5927\u5c0f",
     "CENTER_CAMERA": "\u8996\u89d2\u56de\u4e2d\u81f3\u73a9\u5bb6",
     "NETHER_WARNING": "\u3010 \u4e0b\u754c\u78c1\u5834\u5e72\u64fe\u904e\u5f37\uff0c\u7121\u6cd5\u7e6a\u88fd\u5730\u5716 \u3011",
     "COMPASS_N": "\u5317",
@@ -144,6 +159,12 @@ namespace LanguageManager {
     "WP_NAME": "\u540d\u7a31",
     "WP_COLOR": "\u984f\u8272",
     "WP_DEFAULT_NAME": "\u65b0\u5730\u6a19",
+    "ADJUST_POSITION": "\u4f4d\u7f6e\u8abf\u6574",
+    "POSITION_SETTINGS": "\u5c0f\u5730\u5716\u4f4d\u7f6e\u8a2d\u7f6e",
+    "POSITION_X": "X \u504f\u79fb",
+    "POSITION_Y": "Y \u504f\u79fb",
+    "SAVE_EXIT": "\u4fdd\u5b58\u4e26\u9000\u51fa",
+    "DONT_SAVE": "\u4e0d\u4fdd\u5b58",
     "LANG_SELECT": "\u8a9e\u8a00"
 })json"},
         {"de", R"json({
@@ -158,6 +179,7 @@ namespace LanguageManager {
     "SIDEBAR_OPS": "[ Einstellungen ]",
     "SHOW_MINIMAP": "Minimap anzeigen",
     "SQUARE_MINIMAP": "Eckige Minimap",
+    "MINIMAP_SIZE": "Minimap Size",
     "CENTER_CAMERA": "Kamera auf Spieler zentrieren",
     "NETHER_WARNING": "[ Nether-Magnetfeld ist zu stark, um Karte zu zeichnen ]",
     "COMPASS_N": "N",
@@ -187,6 +209,12 @@ namespace LanguageManager {
     "WP_NAME": "Name",
     "WP_COLOR": "Farbe",
     "WP_DEFAULT_NAME": "Neuer Wegpunkt",
+    "ADJUST_POSITION": "Adjust Position",
+    "POSITION_SETTINGS": "Minimap Position",
+    "POSITION_X": "X Offset",
+    "POSITION_Y": "Y Offset",
+    "SAVE_EXIT": "Save && Exit",
+    "DONT_SAVE": "Don't Save",
     "LANG_SELECT": "Sprache"
 })json"},
         {"fr", R"json({
@@ -201,6 +229,7 @@ namespace LanguageManager {
     "SIDEBAR_OPS": "[ Param\u00e8tres ]",
     "SHOW_MINIMAP": "Afficher la minimap",
     "SQUARE_MINIMAP": "Minimap carr\u00e9e",
+    "MINIMAP_SIZE": "Minimap Size",
     "CENTER_CAMERA": "Centrer la cam\u00e9ra sur le joueur",
     "NETHER_WARNING": "[ Le champ magn\u00e9tique du Nether est trop fort pour dessiner la carte ]",
     "COMPASS_N": "N",
@@ -230,6 +259,12 @@ namespace LanguageManager {
     "WP_NAME": "Nom",
     "WP_COLOR": "Couleur",
     "WP_DEFAULT_NAME": "Nouveau rep\u00e8re",
+    "ADJUST_POSITION": "Adjust Position",
+    "POSITION_SETTINGS": "Minimap Position",
+    "POSITION_X": "X Offset",
+    "POSITION_Y": "Y Offset",
+    "SAVE_EXIT": "Save && Exit",
+    "DONT_SAVE": "Don't Save",
     "LANG_SELECT": "Langue"
 })json"},
         {"id", R"json({
@@ -244,6 +279,7 @@ namespace LanguageManager {
     "SIDEBAR_OPS": "[ Pengaturan ]",
     "SHOW_MINIMAP": "Tampilkan Minimap",
     "SQUARE_MINIMAP": "Minimap Kotak",
+    "MINIMAP_SIZE": "Minimap Size",
     "CENTER_CAMERA": "Pusatkan Kamera ke Pemain",
     "NETHER_WARNING": "[ Medan magnet Nether terlalu kuat untuk menggambar peta ]",
     "COMPASS_N": "U",
@@ -273,6 +309,12 @@ namespace LanguageManager {
     "WP_NAME": "Nama",
     "WP_COLOR": "Warna",
     "WP_DEFAULT_NAME": "Titik Jalan Baru",
+    "ADJUST_POSITION": "Adjust Position",
+    "POSITION_SETTINGS": "Minimap Position",
+    "POSITION_X": "X Offset",
+    "POSITION_Y": "Y Offset",
+    "SAVE_EXIT": "Save && Exit",
+    "DONT_SAVE": "Don't Save",
     "LANG_SELECT": "Bahasa"
 })json"},
         {"it", R"json({
@@ -287,6 +329,7 @@ namespace LanguageManager {
     "SIDEBAR_OPS": "[ Impostazioni ]",
     "SHOW_MINIMAP": "Mostra Minimappa",
     "SQUARE_MINIMAP": "Minimappa quadrata",
+    "MINIMAP_SIZE": "Minimap Size",
     "CENTER_CAMERA": "Centra la visuale sul giocatore",
     "NETHER_WARNING": "[ Il campo magnetico del Nether \u00e8 troppo forte per disegnare la mappa ]",
     "COMPASS_N": "N",
@@ -316,6 +359,12 @@ namespace LanguageManager {
     "WP_NAME": "Nome",
     "WP_COLOR": "Colore",
     "WP_DEFAULT_NAME": "Nuovo waypoint",
+    "ADJUST_POSITION": "Adjust Position",
+    "POSITION_SETTINGS": "Minimap Position",
+    "POSITION_X": "X Offset",
+    "POSITION_Y": "Y Offset",
+    "SAVE_EXIT": "Save && Exit",
+    "DONT_SAVE": "Don't Save",
     "LANG_SELECT": "Lingua"
 })json"},
         {"ja", R"json({
@@ -330,6 +379,7 @@ namespace LanguageManager {
     "SIDEBAR_OPS": "[ \u64cd\u4f5c\u30d1\u30cd\u30eb ]",
     "SHOW_MINIMAP": "\u30df\u30cb\u30de\u30c3\u30d7\u3092\u8868\u793a",
     "SQUARE_MINIMAP": "\u56db\u89d2\u3044\u30df\u30cb\u30de\u30c3\u30d7\u3092\u4f7f\u7528",
+    "MINIMAP_SIZE": "\u30df\u30cb\u30de\u30c3\u30d7\u30b5\u30a4\u30ba",
     "CENTER_CAMERA": "\u30d7\u30ec\u30a4\u30e4\u30fc\u3092\u753b\u9762\u4e2d\u592e\u306b",
     "NETHER_WARNING": "\u3010 \u30cd\u30b6\u30fc\u306e\u78c1\u5834\u304c\u5f37\u3059\u304e\u308b\u305f\u3081\u3001\u30de\u30c3\u30d7\u3092\u63cf\u753b\u3067\u304d\u307e\u305b\u3093 \u3011",
     "COMPASS_N": "\u5317",
@@ -359,6 +409,12 @@ namespace LanguageManager {
     "WP_NAME": "\u540d\u524d",
     "WP_COLOR": "\u8272",
     "WP_DEFAULT_NAME": "\u65b0\u898f\u30dd\u30a4\u30f3\u30c8",
+    "ADJUST_POSITION": "Adjust Position",
+    "POSITION_SETTINGS": "Minimap Position",
+    "POSITION_X": "X Offset",
+    "POSITION_Y": "Y Offset",
+    "SAVE_EXIT": "Save && Exit",
+    "DONT_SAVE": "Don't Save",
     "LANG_SELECT": "\u8a00\u8a9e"
 })json"},
         {"ko", R"json({
@@ -373,6 +429,7 @@ namespace LanguageManager {
     "SIDEBAR_OPS": "[ \uc124\uc815 \ud328\ub110 ]",
     "SHOW_MINIMAP": "\ubbf8\ub2c8\ub9f6 \ud45c\uc2dc",
     "SQUARE_MINIMAP": "\uc0ac\uac01\ud615 \ubbf8\ub2c8\ub9f6 \uc0ac\uc6a9",
+    "MINIMAP_SIZE": "\ubbf8\ub2c8\ub9f6 \ud06c\uae30",
     "CENTER_CAMERA": "\uce74\uba54\ub77c\ub97c \ud50c\ub808\uc774\uc5b4\uc5d0 \uc911\uc559",
     "NETHER_WARNING": "\u3010 \uc9c0\uc625\uc758 \uc790\uae30\uc7a5\uc774 \ub108\ubb34 \uac15\ud574\uc11c \uc9c0\ub3c4\ub97c \uadf8\ub9b4 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4 \u3011",
     "COMPASS_N": "\ubd81",
@@ -402,6 +459,12 @@ namespace LanguageManager {
     "WP_NAME": "\uc774\ub984",
     "WP_COLOR": "\uc0c9\uc0c1",
     "WP_DEFAULT_NAME": "\uc0c8 \uc704\uce58",
+    "ADJUST_POSITION": "Adjust Position",
+    "POSITION_SETTINGS": "Minimap Position",
+    "POSITION_X": "X Offset",
+    "POSITION_Y": "Y Offset",
+    "SAVE_EXIT": "Save && Exit",
+    "DONT_SAVE": "Don't Save",
     "LANG_SELECT": "\uc5b8\uc5b4"
 })json"},
         {"pt_BR", R"json({
@@ -416,6 +479,7 @@ namespace LanguageManager {
     "SIDEBAR_OPS": "[ Painel de Op\u00e7\u00f5es ]",
     "SHOW_MINIMAP": "Mostrar Minimapa",
     "SQUARE_MINIMAP": "Minimapa Quadrado",
+    "MINIMAP_SIZE": "Minimap Size",
     "CENTER_CAMERA": "Centralizar C\u00e2mera no Jogador",
     "NETHER_WARNING": "[ O campo magn\u00e9tico do Nether \u00e9 muito forte para desenhar o mapa ]",
     "COMPASS_N": "N",
@@ -445,6 +509,12 @@ namespace LanguageManager {
     "WP_NAME": "Nome",
     "WP_COLOR": "Cor",
     "WP_DEFAULT_NAME": "Novo Marcador",
+    "ADJUST_POSITION": "Adjust Position",
+    "POSITION_SETTINGS": "Minimap Position",
+    "POSITION_X": "X Offset",
+    "POSITION_Y": "Y Offset",
+    "SAVE_EXIT": "Save && Exit",
+    "DONT_SAVE": "Don't Save",
     "LANG_SELECT": "Idioma"
 })json"},
         {"ru", R"json({
@@ -459,6 +529,7 @@ namespace LanguageManager {
     "SIDEBAR_OPS": "[ \u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438 ]",
     "SHOW_MINIMAP": "\u041f\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0442\u044c \u043c\u0438\u043d\u0438\u043a\u0430\u0440\u0442\u0443",
     "SQUARE_MINIMAP": "\u041a\u0432\u0430\u0434\u0440\u0430\u0442\u043d\u0430\u044f \u043c\u0438\u043d\u0438\u043a\u0430\u0440\u0442\u0430",
+    "MINIMAP_SIZE": "Minimap Size",
     "CENTER_CAMERA": "\u0426\u0435\u043d\u0442\u0440\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u043d\u0430 \u0438\u0433\u0440\u043e\u043a\u0435",
     "NETHER_WARNING": "[\u041c\u0430\u0433\u043d\u0438\u0442\u043d\u043e\u0435 \u043f\u043e\u043b\u0435 \u041d\u0435\u0437\u0435\u0440\u0430 \u0441\u043b\u0438\u0448\u043a\u043e\u043c \u0441\u0438\u043b\u044c\u043d\u043e\u0435 \u0434\u043b\u044f \u043e\u0442\u0440\u0438\u0441\u043e\u0432\u043a\u0438 \u043a\u0430\u0440\u0442\u044b]",
     "COMPASS_N": "\u0421",
@@ -488,6 +559,12 @@ namespace LanguageManager {
     "WP_NAME": "\u0418\u043c\u044f",
     "WP_COLOR": "\u0426\u0432\u0435\u0442",
     "WP_DEFAULT_NAME": "\u041d\u043e\u0432\u0430\u044f \u0442\u043e\u0447\u043a\u0430",
+    "ADJUST_POSITION": "Adjust Position",
+    "POSITION_SETTINGS": "Minimap Position",
+    "POSITION_X": "X Offset",
+    "POSITION_Y": "Y Offset",
+    "SAVE_EXIT": "Save && Exit",
+    "DONT_SAVE": "Don't Save",
     "LANG_SELECT": "\u042f\u0437\u044b\u043a"
 })json"},
         {"th", R"json({
@@ -502,6 +579,7 @@ namespace LanguageManager {
     "SIDEBAR_OPS": "[ \u0e41\u0e1c\u0e07\u0e15\u0e31\u0e49\u0e07\u0e04\u0e48\u0e32 ]",
     "SHOW_MINIMAP": "\u0e41\u0e2a\u0e14\u0e07\u0e41\u0e1c\u0e19\u0e17\u0e35\u0e48\u0e22\u0e48\u0e2d",
     "SQUARE_MINIMAP": "\u0e43\u0e0a\u0e49\u0e41\u0e1c\u0e19\u0e17\u0e35\u0e48\u0e22\u0e48\u0e2d\u0e2a\u0e35\u0e48\u0e40\u0e2b\u0e25\u0e35\u0e48\u0e22\u0e21",
+    "MINIMAP_SIZE": "Minimap Size",
     "CENTER_CAMERA": "\u0e40\u0e25\u0e37\u0e48\u0e2d\u0e19\u0e01\u0e25\u0e49\u0e2d\u0e07\u0e44\u0e1b\u0e17\u0e35\u0e48\u0e1c\u0e39\u0e49\u0e40\u0e25\u0e48\u0e19",
     "NETHER_WARNING": "[\u0e2a\u0e19\u0e32\u0e21\u0e41\u0e21\u0e48\u0e40\u0e2b\u0e25\u0e47\u0e01\u0e40\u0e19\u0e18\u0e40\u0e2d\u0e23\u0e4c\u0e41\u0e23\u0e07\u0e21\u0e32\u0e01 \u0e44\u0e21\u0e48\u0e2a\u0e32\u0e21\u0e32\u0e23\u0e16\u0e27\u0e32\u0e14\u0e41\u0e1c\u0e19\u0e17\u0e35\u0e48\u0e44\u0e14\u0e49]",
     "COMPASS_N": "\u0e40\u0e2b\u0e19\u0e37\u0e2d",
@@ -531,6 +609,12 @@ namespace LanguageManager {
     "WP_NAME": "\u0e0a\u0e37\u0e48\u0e2d",
     "WP_COLOR": "\u0e2a\u0e35",
     "WP_DEFAULT_NAME": "\u0e08\u0e38\u0e14\u0e40\u0e2a\u0e49\u0e19\u0e17\u0e32\u0e07\u0e43\u0e2b\u0e21\u0e48",
+    "ADJUST_POSITION": "Adjust Position",
+    "POSITION_SETTINGS": "Minimap Position",
+    "POSITION_X": "X Offset",
+    "POSITION_Y": "Y Offset",
+    "SAVE_EXIT": "Save && Exit",
+    "DONT_SAVE": "Don't Save",
     "LANG_SELECT": "\u0e20\u0e32\u0e29\u0e32"
 })json"},
         {"tr", R"json({
@@ -545,6 +629,7 @@ namespace LanguageManager {
     "SIDEBAR_OPS": "[ Ayarlar Paneli ]",
     "SHOW_MINIMAP": "Mini Haritayi Goster",
     "SQUARE_MINIMAP": "Kare Mini Harita Kullan",
+    "MINIMAP_SIZE": "Minimap Size",
     "CENTER_CAMERA": "Kamerayi Oyuncuya Ortala",
     "NETHER_WARNING": "[ Nether manyetik alani harita cizmek icin cok guclu ]",
     "COMPASS_N": "K",
@@ -574,6 +659,12 @@ namespace LanguageManager {
     "WP_NAME": "Isim",
     "WP_COLOR": "Renk",
     "WP_DEFAULT_NAME": "Yeni Isaret",
+    "ADJUST_POSITION": "Adjust Position",
+    "POSITION_SETTINGS": "Minimap Position",
+    "POSITION_X": "X Offset",
+    "POSITION_Y": "Y Offset",
+    "SAVE_EXIT": "Save && Exit",
+    "DONT_SAVE": "Don't Save",
     "LANG_SELECT": "Dil"
 })json"},
         {"uk", R"json({
@@ -588,6 +679,7 @@ namespace LanguageManager {
     "SIDEBAR_OPS": "[ \u041d\u0430\u043b\u0430\u0448\u0442\u0443\u0432\u0430\u043d\u043d\u044f ]",
     "SHOW_MINIMAP": "\u041f\u043e\u043a\u0430\u0437\u0443\u0432\u0430\u0442\u0438 \u043c\u0456\u043d\u0456\u043a\u0430\u0440\u0442\u0443",
     "SQUARE_MINIMAP": "\u041a\u0432\u0430\u0434\u0440\u0430\u0442\u043d\u0430 \u043c\u0456\u043d\u0456\u043a\u0430\u0440\u0442\u0430",
+    "MINIMAP_SIZE": "Minimap Size",
     "CENTER_CAMERA": "\u0426\u0435\u043d\u0442\u0440\u0443\u0432\u0430\u0442\u0438 \u043d\u0430 \u0433\u0440\u0430\u0432\u0446\u0435\u0432\u0456",
     "NETHER_WARNING": "[\u041c\u0430\u0433\u043d\u0456\u0442\u043d\u0435 \u043f\u043e\u043b\u0435 \u041d\u0435\u0437\u0435\u0440\u0443 \u0437\u0430\u043d\u0430\u0434\u0442\u043e \u0441\u0438\u043b\u044c\u043d\u0435 \u0434\u043b\u044f \u043a\u0430\u0440\u0442\u0438]",
     "COMPASS_N": "\u041f\u043d",
@@ -617,6 +709,12 @@ namespace LanguageManager {
     "WP_NAME": "\u0406\u043c\u02bc\u044f",
     "WP_COLOR": "\u041a\u043e\u043b\u0456\u0440",
     "WP_DEFAULT_NAME": "\u041d\u043e\u0432\u0430 \u0442\u043e\u0447\u043a\u0430",
+    "ADJUST_POSITION": "Adjust Position",
+    "POSITION_SETTINGS": "Minimap Position",
+    "POSITION_X": "X Offset",
+    "POSITION_Y": "Y Offset",
+    "SAVE_EXIT": "Save && Exit",
+    "DONT_SAVE": "Don't Save",
     "LANG_SELECT": "\u041c\u043e\u0432\u0430"
 })json"},
         {"vi", R"json({
@@ -631,6 +729,7 @@ namespace LanguageManager {
     "SIDEBAR_OPS": "[ B\u1ea3ng t\u00f9y ch\u1ecdn ]",
     "SHOW_MINIMAP": "Hi\u1ec3n th\u1ecb b\u1ea3n \u0111\u1ed3 nh\u1ecf",
     "SQUARE_MINIMAP": "S\u1eed d\u1ee5ng b\u1ea3n \u0111\u1ed3 nh\u1ecf vu\u00f4ng",
+    "MINIMAP_SIZE": "Minimap Size",
     "CENTER_CAMERA": "C\u0103n gi\u1eefa camera v\u00e0o ng\u01b0\u1eddi ch\u01a1i",
     "NETHER_WARNING": "[ T\u1eeb tr\u01b0\u1eddng Nether qu\u00e1 m\u1ea1nh \u0111\u1ec3 v\u1ebd b\u1ea3n \u0111\u1ed3 ]",
     "COMPASS_N": "B\u1eafc",
@@ -660,6 +759,12 @@ namespace LanguageManager {
     "WP_NAME": "T\u00ean",
     "WP_COLOR": "M\u00e0u s\u1eafc",
     "WP_DEFAULT_NAME": "M\u1ed1c m\u1edbi",
+    "ADJUST_POSITION": "Adjust Position",
+    "POSITION_SETTINGS": "Minimap Position",
+    "POSITION_X": "X Offset",
+    "POSITION_Y": "Y Offset",
+    "SAVE_EXIT": "Save && Exit",
+    "DONT_SAVE": "Don't Save",
     "LANG_SELECT": "Ng\u00f4n ng\u1eef"
 })json"}
     };
@@ -669,12 +774,10 @@ namespace LanguageManager {
 
         for (const auto& [langCode, jsonContent] : g_defaultJsonFiles) {
             std::string filePath = "mods/ChiyanMap/lang/" + langCode + ".json";
-            if (!std::filesystem::exists(filePath)) {
-                std::ofstream out(filePath);
-                if (out.is_open()) {
-                    out << jsonContent;
-                    out.close();
-                }
+            std::ofstream out(filePath);
+            if (out.is_open()) {
+                out << jsonContent;
+                out.close();
             }
         }
 
@@ -774,6 +877,9 @@ namespace LanguageManager {
                 g_currentLanguage = j.value("language", "en");
                 MapRenderState::showMiniMap = j.value("showMiniMap", true);
                 MapRenderState::isSquareMap = j.value("isSquareMap", false);
+                MapRenderState::minimapSize = j.value("minimapSize", 135.0f);
+                MapRenderState::minimapOffsetX = j.value("minimapOffsetX", 0.0f);
+                MapRenderState::minimapOffsetY = j.value("minimapOffsetY", 0.0f);
             } catch (...) {
                 g_currentLanguage = "en";
             }
@@ -788,6 +894,9 @@ namespace LanguageManager {
         j["language"] = g_currentLanguage;
         j["showMiniMap"] = MapRenderState::showMiniMap;
         j["isSquareMap"] = MapRenderState::isSquareMap;
+        j["minimapSize"] = MapRenderState::minimapSize;
+        j["minimapOffsetX"] = MapRenderState::minimapOffsetX;
+        j["minimapOffsetY"] = MapRenderState::minimapOffsetY;
 
         std::ofstream out(filePath);
         if (out.is_open()) {

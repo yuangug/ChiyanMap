@@ -1,6 +1,9 @@
 #pragma once
 #include <atomic>
 #include <vector>
+#include <string>
+#include <mutex>
+#include <unordered_map>
 #include <mc/deps/core/math/Color.h>
 
 namespace MapRenderState {
@@ -21,10 +24,11 @@ namespace MapRenderState {
 
     // [新增] 路径点 UI 开启状态
     inline bool showWaypointUI = false;
+    inline bool showPositionSettings = false; // 位置调整面板开关
 
     // [统一拦截枢纽] 判断是否有任何全屏 UI 处于活动状态
     inline bool IsUIActive() {
-        return showBigMap || showWaypointUI;
+        return showBigMap || showWaypointUI || showPositionSettings;
     }
 
     // [新增] 跨菜单桥接：大地图右键唤起新建地标的预设坐标
@@ -41,6 +45,11 @@ namespace MapRenderState {
 
     inline bool showMiniMap = true;  // 是否显示小地图
     inline bool isSquareMap = false; // 是否为方形小地图
+    inline float minimapSize = 135.0f; // 小地图半径(像素)
+    inline float minimapOffsetX = 0.0f; // 小地图X偏移
+    inline float minimapOffsetY = 0.0f; // 小地图Y偏移
+    inline float tempMinimapOffsetX = 0.0f; // 临时X偏移（撤销用）
+    inline float tempMinimapOffsetY = 0.0f; // 临时Y偏移（撤销用）
 }
 
 // 【全球探索级】：匹配 16 区块能见度的究极扫描半径（513x513个方块）！
@@ -51,12 +60,22 @@ struct RadarEntity {
     float x;
     float y;
     float z;
-    int type; 
+    int type;           // 0=player,1=monster,2=other,3=item
+    std::string entityType; // "minecraft:zombie", "player", "item", etc.
+    std::string uuid;       // player UUID (empty for non-players)
+};
+
+// 玩家皮肤头部像素缓存（游戏线程写入）
+struct PlayerSkinHead {
+    uint8_t pixels[8*8*4]{}; // 8x8 RGBA 头部正面
+    bool valid = false;
 };
 
 extern std::atomic<bool> g_radarUpdated;
 extern std::vector<RadarEntity> g_radarEntities;
-inline std::atomic<bool> g_mapDataUpdated{true}; 
+extern std::unordered_map<std::string, PlayerSkinHead> g_playerSkinHeads; // keyed by UUID
+extern std::mutex g_playerSkinMutex;
+inline std::atomic<bool> g_mapDataUpdated{true};
 
 // 前台缓冲（仅供显卡渲染读取，绝不闪烁）
 extern mce::Color g_mapColors[MAP_DATA_SIZE][MAP_DATA_SIZE];
