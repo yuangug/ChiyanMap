@@ -359,6 +359,69 @@ inline mce::Color getBlockColor(std::string const& name, mce::Color grassCol, mc
         return mce::Color(0.88f, 0.49f, 0.24f, 1.0f); // 普通铜块
     }
 
+    // 其他矿石
+    if (name.find("coal_ore") != std::string::npos) return mce::Color(0.20f, 0.20f, 0.20f, 1.0f);
+    if (name.find("iron_ore") != std::string::npos) return mce::Color(0.75f, 0.60f, 0.55f, 1.0f);
+    if (name.find("gold_ore") != std::string::npos) return mce::Color(0.85f, 0.70f, 0.25f, 1.0f);
+    if (name.find("diamond_ore") != std::string::npos) return mce::Color(0.45f, 0.75f, 0.80f, 1.0f);
+    if (name.find("emerald_ore") != std::string::npos) return mce::Color(0.35f, 0.75f, 0.35f, 1.0f);
+    if (name.find("lapis_ore") != std::string::npos) return mce::Color(0.35f, 0.40f, 0.70f, 1.0f);
+
+    // 粗矿块（raw_copper_block 已在 copper 段处理）
+    if (name.find("raw_iron") != std::string::npos) return mce::Color(0.72f, 0.55f, 0.45f, 1.0f);
+    if (name.find("raw_gold") != std::string::npos) return mce::Color(0.85f, 0.65f, 0.30f, 1.0f);
+
+    // 金属块（raw_*_block 类必须在前面检查）
+    if (name.find("iron_block") != std::string::npos) return mce::Color(0.80f, 0.80f, 0.82f, 1.0f);
+    if (name.find("gold_block") != std::string::npos) return mce::Color(0.92f, 0.78f, 0.18f, 1.0f);
+    if (name.find("diamond_block") != std::string::npos) return mce::Color(0.30f, 0.75f, 0.85f, 1.0f);
+    if (name.find("emerald_block") != std::string::npos) return mce::Color(0.25f, 0.75f, 0.30f, 1.0f);
+    if (name.find("lapis_block") != std::string::npos) return mce::Color(0.15f, 0.25f, 0.55f, 1.0f);
+    if (name.find("netherite_block") != std::string::npos) return mce::Color(0.22f, 0.18f, 0.18f, 1.0f);
+    if (name.find("coal_block") != std::string::npos) return mce::Color(0.12f, 0.12f, 0.12f, 1.0f);
+
+    // 深暗之域（Sculk）
+    if (name.find("sculk") != std::string::npos) return mce::Color(0.10f, 0.18f, 0.16f, 1.0f);
+
+    // 紫晶
+    if (name.find("amethyst") != std::string::npos) return mce::Color(0.55f, 0.30f, 0.65f, 1.0f);
+
+    // 水滴石 / 方解石
+    if (name.find("dripstone") != std::string::npos) return mce::Color(0.50f, 0.40f, 0.30f, 1.0f);
+    if (name.find("calcite") != std::string::npos) return mce::Color(0.90f, 0.90f, 0.88f, 1.0f);
+
+    // 基岩 / 刷怪笼
+    if (name.find("bedrock") != std::string::npos) return mce::Color(0.12f, 0.12f, 0.12f, 1.0f);
+    if (name.find("spawner") != std::string::npos) return mce::Color(0.20f, 0.14f, 0.24f, 1.0f);
+
+    // 泥巴 / 红树
+    if (name.find("mud") != std::string::npos || name.find("mangrove") != std::string::npos) return mce::Color(0.30f, 0.22f, 0.15f, 1.0f);
+
+    // 海晶石
+    if (name.find("prismarine") != std::string::npos) {
+        if (name.find("dark") != std::string::npos) return mce::Color(0.15f, 0.35f, 0.25f, 1.0f);
+        return mce::Color(0.30f, 0.55f, 0.45f, 1.0f);
+    }
+    if (name.find("sea_lantern") != std::string::npos) return mce::Color(0.90f, 0.85f, 0.65f, 1.0f);
+    if (name.find("conduit") != std::string::npos) return mce::Color(0.35f, 0.55f, 0.75f, 1.0f);
+    if (name.find("sponge") != std::string::npos) {
+        if (name.find("wet") != std::string::npos) return mce::Color(0.70f, 0.65f, 0.30f, 1.0f);
+        return mce::Color(0.85f, 0.75f, 0.20f, 1.0f);
+    }
+
+    // 下界
+    if (name.find("soul_sand") != std::string::npos || name.find("soul_soil") != std::string::npos) return mce::Color(0.35f, 0.25f, 0.15f, 1.0f);
+
+    // 功能方块
+    if (name.find("crafting_table") != std::string::npos) return mce::Color(0.55f, 0.30f, 0.15f, 1.0f);
+    if (name.find("furnace") != std::string::npos) return mce::Color(0.50f, 0.50f, 0.50f, 1.0f);
+    if (name == "minecraft:tnt" || name == "tnt") return mce::Color(0.75f, 0.15f, 0.15f, 1.0f);
+
+    // 蜂巢 / 蜂蜜
+    if (name.find("bee_nest") != std::string::npos || name.find("beehive") != std::string::npos) return mce::Color(0.65f, 0.50f, 0.20f, 1.0f);
+    if (name.find("honeycomb") != std::string::npos) return mce::Color(0.85f, 0.55f, 0.15f, 1.0f);
+    if (name.find("honey") != std::string::npos) return mce::Color(0.85f, 0.60f, 0.20f, 1.0f);
+
     if (name.find("planks") != std::string::npos || name.find("oak") != std::string::npos || name.find("spruce") != std::string::npos || name.find("birch") != std::string::npos || name.find("jungle") != std::string::npos || name.find("acacia") != std::string::npos || name.find("dark_oak") != std::string::npos) return mce::Color(0.65f, 0.45f, 0.25f, 1.0f);
     if (name.find("wood") != std::string::npos || name.find("log") != std::string::npos || name.find("stem") != std::string::npos || name.find("stairs") != std::string::npos || name.find("slab") != std::string::npos || name.find("fence") != std::string::npos || name.find("door") != std::string::npos || name.find("trapdoor") != std::string::npos || name.find("sign") != std::string::npos || name.find("chest") != std::string::npos) return mce::Color(0.55f, 0.40f, 0.20f, 1.0f);
     if (name.find("stone") != std::string::npos || name.find("cobble") != std::string::npos || name.find("andesite") != std::string::npos || name.find("diorite") != std::string::npos || name.find("granite") != std::string::npos || name.find("tuff") != std::string::npos || name.find("brick") != std::string::npos || name.find("wall") != std::string::npos || name.find("gravel") != std::string::npos || name.find("clay") != std::string::npos) return mce::Color(0.55f, 0.55f, 0.55f, 1.0f);
