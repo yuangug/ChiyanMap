@@ -65,7 +65,8 @@ namespace LanguageManager {
     "POSITION_Y": "Y Offset",
     "SAVE_EXIT": "Save && Exit",
     "DONT_SAVE": "Don't Save",
-    "LANG_SELECT": "Language"
+    "LANG_SELECT": "Language",
+    "CAVE_MODE": "\u26cf Cave Mode Y=%d"
 })json"},
         {"zh_CN", R"json({
     "BIGMAP_TITLE": "\u8d64\u7130\u5168\u5c40\u5927\u5730\u56fe | \u7f29\u653e: %.1fx",
@@ -115,7 +116,8 @@ namespace LanguageManager {
     "POSITION_Y": "Y \u504f\u79fb",
     "SAVE_EXIT": "\u4fdd\u5b58\u5e76\u9000\u51fa",
     "DONT_SAVE": "\u4e0d\u4fdd\u5b58",
-    "LANG_SELECT": "\u8bed\u8a00"
+    "LANG_SELECT": "\u8bed\u8a00",
+    "CAVE_MODE": "\u26cf \u6d1e\u7a74\u6a21\u5f0f Y=%d"
 })json"},
         {"zh_TW", R"json({
     "BIGMAP_TITLE": "\u8d64\u7130\u5168\u5c40\u5730\u5716 | \u7e2e\u653e: %.1fx",
@@ -165,7 +167,8 @@ namespace LanguageManager {
     "POSITION_Y": "Y \u504f\u79fb",
     "SAVE_EXIT": "\u4fdd\u5b58\u4e26\u9000\u51fa",
     "DONT_SAVE": "\u4e0d\u4fdd\u5b58",
-    "LANG_SELECT": "\u8a9e\u8a00"
+    "LANG_SELECT": "\u8a9e\u8a00",
+    "CAVE_MODE": "\u26cf \u6d1e\u7a74\u6a21\u5f0f Y=%d"
 })json"},
         {"de", R"json({
     "BIGMAP_TITLE": "Chiyan Weltkarte | Zoom: %.1fx",

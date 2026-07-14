@@ -999,6 +999,19 @@ namespace DX11Hook {
         draw_list->AddText(ImVec2(cx + IM_MAP_R + 4, cy - 9), IM_COL32(220, 220, 255, 255), LanguageManager::GetText("COMPASS_E"));
         draw_list->AddText(ImVec2(cx - IM_MAP_R - 20, cy - 9), IM_COL32(220, 220, 255, 255), LanguageManager::GetText("COMPASS_W"));
 
+        {
+            char modeBuf[64];
+            if (MapRenderState::caveMode) {
+                snprintf(modeBuf, sizeof(modeBuf), LanguageManager::GetText("CAVE_MODE"), MapRenderState::caveScanY);
+            }
+            ImVec2 modeSize = ImGui::CalcTextSize(modeBuf);
+            ImVec2 modePos(cx - modeSize.x / 2, cy + IM_MAP_R + 66);
+            if (MapRenderState::caveMode) {
+                draw_list->AddText(ImVec2(modePos.x + 1, modePos.y + 1), IM_COL32(0,0,0,200), modeBuf);
+                draw_list->AddText(modePos, IM_COL32(255, 200, 50, 255), modeBuf);
+            }
+        }
+
         static std::vector<RadarEntity> s_cachedEntities;
         if (g_radarUpdated.load()) {
             s_cachedEntities = g_radarEntities;
@@ -1315,7 +1328,7 @@ namespace DX11Hook {
         int endRz   = (int)std::floor(maxWz / 256.0f);
 
         int texturesCreatedThisFrame = 0;
-        if (MapRenderState::currentDimensionId != 1) {
+        {
             static int s_vramGcTimer = 0;
             if (++s_vramGcTimer > 300) {
                 s_vramGcTimer = 0;
@@ -1359,10 +1372,6 @@ namespace DX11Hook {
             }
             
             draw_list->AddCallback(LinearSamplerCallback, nullptr);
-        } else {
-            const char* netherMsg = LanguageManager::GetText("NETHER_WARNING");
-            ImVec2 ts = ImGui::CalcTextSize(netherMsg);
-            draw_list->AddText(ImVec2(cx - ts.x / 2, cy - ts.y / 2 - 50.0f), IM_COL32(255, 80, 80, 200), netherMsg);
         }
         
         float px = cx + MapRenderState::bigMapOffsetX;

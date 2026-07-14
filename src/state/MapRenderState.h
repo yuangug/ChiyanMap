@@ -45,6 +45,9 @@ namespace MapRenderState {
 
     inline bool showMiniMap = true;  // 是否显示小地图
     inline bool isSquareMap = false; // 是否为方形小地图
+    inline bool caveMode = false; // 洞穴模式（自动检测）
+    inline int caveScanY = 0;     // 当前洞穴扫描的 Y 层
+    inline int caveRange = 3;     // 玩家 Y 上下检查范围
     inline float minimapSize = 135.0f; // 小地图半径(像素)
     inline float minimapOffsetX = 0.0f; // 小地图X偏移
     inline float minimapOffsetY = 0.0f; // 小地图Y偏移

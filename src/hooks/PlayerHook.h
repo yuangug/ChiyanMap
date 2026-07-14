@@ -355,6 +355,18 @@ inline mce::Color getBlockColor(std::string const& name, mce::Color grassCol, mc
     return mce::Color(r, g, b, 1.0f);
 }
 
+// 自动检测玩家是否在地下（头顶 20 格内有实体方块）
+inline bool IsPlayerUnderground(BlockSource* region, int px, int py, int pz) {
+    if (!region) return false;
+    for (int y = py + 2; y <= py + 22 && y < 319; y++) {
+        try {
+            auto name = region->getBlock(BlockPos(px, y, pz)).getTypeName();
+            if (name != "minecraft:air" && name != "air") return true;
+        } catch (...) { break; }
+    }
+    return false;
+}
+
 LL_TYPE_INSTANCE_HOOK(
     ClientInstanceUpdateHook,
     ll::memory::HookPriority::Normal,
@@ -517,7 +529,13 @@ LL_TYPE_INSTANCE_HOOK(
                 std::memset(g_mapHeightsBack, 0, sizeof(g_mapHeightsBack));
                 std::memset(g_mapColorsBack, 0, sizeof(g_mapColorsBack));
                 
-                MapCacheManager::PreloadScanBuffer(g_playerBlockX, g_playerBlockZ, g_mapColors, g_mapHeights);
+                // 下界自动洞穴模式，跳过地表缓存预加载
+                if (dimId == 1) {
+                    MapRenderState::caveMode = true;
+                } else {
+                    MapRenderState::caveMode = false;
+                    MapCacheManager::PreloadScanBuffer(g_playerBlockX, g_playerBlockZ, g_mapColors, g_mapHeights);
+                }
                 
                 MapRenderState::clearGPUCache.store(true); 
                 g_mapDataUpdated.store(true);
@@ -613,13 +631,26 @@ LL_TYPE_INSTANCE_HOOK(
             currentScanZ  = pz;
             ticksSinceScan = 0;
             
+            // 自动检测洞穴模式
+            bool prevCave = MapRenderState::caveMode;
             if (MapRenderState::currentDimensionId == 1) {
-                isScanning = false;
+                MapRenderState::caveMode = true;
             } else {
-                isScanning = true;
-                currentRow = -MAP_DATA_RADIUS;
-                currentCol = -MAP_DATA_RADIUS;
+                auto* rp = this->getRegion();
+                MapRenderState::caveMode = rp ? IsPlayerUnderground(rp, px, (int)g_playerY, pz) : false;
             }
+            if (MapRenderState::caveMode != prevCave) {
+                std::memset(g_mapColors, 0, sizeof(g_mapColors));
+                std::memset(g_mapHeights, 0, sizeof(g_mapHeights));
+                g_mapDataUpdated.store(true);
+            }
+            if (MapRenderState::caveMode) {
+                MapRenderState::caveScanY = (int)g_playerY;
+            }
+            
+            isScanning = true;
+            currentRow = -MAP_DATA_RADIUS;
+            currentCol = -MAP_DATA_RADIUS;
         }
 
         if (isScanning) {
@@ -651,67 +682,128 @@ LL_TYPE_INSTANCE_HOOK(
                             int targetZ = currentScanZ + dz;
                             int arrZ    = dz + MAP_DATA_RADIUS;
 
-                            short topY = region.getAboveTopSolidBlock(targetX, targetZ, true, true);
-                            g_mapHeightsBack[arrX][arrZ] = (float)topY;
+                            if (MapRenderState::caveMode) {
+                                int csy = MapRenderState::caveScanY;
+                                const int MAX_FLOOR_DEPTH = 20;
+                                bool walkable = false;
+                                mce::Color caveColor(0, 0, 0, 1);
+                                int floorY = csy;
 
-                            if (topY > -64) {
-                                Block const& block = region.getBlock(BlockPos(targetX, topY - 1, targetZ));
-                                std::string blockName = block.getTypeName();
+                                for (int dy = -MapRenderState::caveRange; dy <= MapRenderState::caveRange && !walkable; dy++) {
+                                    try {
+                                        std::string n = region.getBlock(BlockPos(targetX, csy + dy, targetZ)).getTypeName();
+                                        if (n == "minecraft:air" || n == "air") walkable = true;
+                                    } catch (...) {}
+                                }
 
-                                if (blockName.find("snow") != std::string::npos) {
-                                    g_mapColorsBack[arrX][arrZ] = mce::Color(0.95f, 0.98f, 1.0f, 1.0f);
-                                } else {
-                                    Block const& blockAbove = region.getBlock(BlockPos(targetX, topY, targetZ));
-                                    std::string aboveName = blockAbove.getTypeName();
-
-                                    if (aboveName == "minecraft:air" || aboveName == "air" ||
-                                        aboveName.find("barrier") != std::string::npos ||
-                                        aboveName.find("light_block") != std::string::npos ||
-                                        aboveName.find("structure_void") != std::string::npos ||
-                                        aboveName.find("placeholder") != std::string::npos ||
-                                        aboveName.find("unknown") != std::string::npos ||
-                                        aboveName.find("info_update") != std::string::npos) {
-                                    } else if (aboveName.find("snow") != std::string::npos) {
-                                        g_mapColorsBack[arrX][arrZ] = mce::Color(0.95f, 0.98f, 1.0f, 1.0f);
-                                        blockName = "";
-                                    } else {
-                                        blockName = aboveName;
-                                    }
-
-                                    if (!blockName.empty()) {
-                                        int cellX = targetX >> 2;
-                                        int cellZ = targetZ >> 2;
-                                        if (cellX != s_biomeCellX || cellZ != s_biomeCellZ) {
-                                            s_biomeCellX = cellX; s_biomeCellZ = cellZ;
-                                            try {
-                                                auto const& biome = region.getBiome(BlockPos(targetX, topY - 1, targetZ));
-                                                std::string newBiomeName = biome.mHash->getString();
-                                                if (s_biomeName != newBiomeName) {
-                                                    s_biomeName = newBiomeName;
-                                                    getBiomeTints(s_biomeName, s_cachedGrass, s_cachedFoliage, s_cachedWater);
+                                if (walkable) {
+                                    floorY = -64;
+                                    for (int fy = csy - 1; fy >= csy - MAX_FLOOR_DEPTH && fy > -64; fy--) {
+                                        try {
+                                            Block const& fb = region.getBlock(BlockPos(targetX, fy, targetZ));
+                                            std::string fn = fb.getTypeName();
+                                            if (fn != "minecraft:air" && fn != "air") {
+                                                floorY = fy;
+                                                int cellX = targetX >> 2;
+                                                int cellZ = targetZ >> 2;
+                                                if (cellX != s_biomeCellX || cellZ != s_biomeCellZ) {
+                                                    s_biomeCellX = cellX; s_biomeCellZ = cellZ;
+                                                    try {
+                                                        auto const& biome = region.getBiome(BlockPos(targetX, fy, targetZ));
+                                                        std::string newBiomeName = biome.mHash->getString();
+                                                        if (s_biomeName != newBiomeName) {
+                                                            s_biomeName = newBiomeName;
+                                                            getBiomeTints(s_biomeName, s_cachedGrass, s_cachedFoliage, s_cachedWater);
+                                                        }
+                                                    } catch (...) { if (!s_biomeName.empty()) s_biomeName = ""; }
                                                 }
-                                            } catch (...) {
-                                                if (!s_biomeName.empty()) { s_biomeName = ""; }
+                                                static std::unordered_map<size_t, mce::Color> s_globalColorCache;
+                                                if (s_globalColorCache.size() > 20000) s_globalColorCache.clear();
+                                                size_t ck = hasher(fn) ^ (hasher(s_biomeName) << 1);
+                                                auto ci = s_globalColorCache.find(ck);
+                                                if (ci != s_globalColorCache.end()) {
+                                                    caveColor = ci->second;
+                                                } else {
+                                                    caveColor = getBlockColor(fn, s_cachedGrass, s_cachedFoliage, s_cachedWater);
+                                                    s_globalColorCache[ck] = caveColor;
+                                                }
+                                                break;
                                             }
-                                        }
-
-                                        static std::unordered_map<size_t, mce::Color> s_globalColorCache;
-                                        if (s_globalColorCache.size() > 20000) s_globalColorCache.clear();
-
-                                        size_t cacheKey = hasher(blockName) ^ (hasher(s_biomeName) << 1);
-                                        auto it = s_globalColorCache.find(cacheKey);
-
-                                        if (it != s_globalColorCache.end()) {
-                                            g_mapColorsBack[arrX][arrZ] = it->second;
-                                        } else {
-                                            mce::Color calculatedColor = getBlockColor(blockName, s_cachedGrass, s_cachedFoliage, s_cachedWater);
-                                            s_globalColorCache[cacheKey] = calculatedColor;
-                                            g_mapColorsBack[arrX][arrZ] = calculatedColor;
+                                        } catch (...) { break; }
+                                    }
+                                    if (floorY == -64) {
+                                        floorY = csy - MAX_FLOOR_DEPTH;
+                                        if (caveColor.r < 0.01f && caveColor.g < 0.01f && caveColor.b < 0.01f && caveColor.a > 0.01f) {
+                                            caveColor = mce::Color(0.15f, 0.15f, 0.15f, 1.0f);
                                         }
                                     }
                                 }
+                                g_mapColorsBack[arrX][arrZ] = caveColor;
+                                g_mapHeightsBack[arrX][arrZ] = (float)floorY;
                             } else {
-                                g_mapColorsBack[arrX][arrZ] = mce::Color(0.0f, 0.0f, 0.0f, 0.0f);
+                                // === 地表模式：现有扫描逻辑 ===
+                                short topY = region.getAboveTopSolidBlock(targetX, targetZ, true, true);
+                                g_mapHeightsBack[arrX][arrZ] = (float)topY;
+
+                                if (topY > -64) {
+                                    Block const& block = region.getBlock(BlockPos(targetX, topY - 1, targetZ));
+                                    std::string blockName = block.getTypeName();
+
+                                    if (blockName.find("snow") != std::string::npos) {
+                                        g_mapColorsBack[arrX][arrZ] = mce::Color(0.95f, 0.98f, 1.0f, 1.0f);
+                                    } else {
+                                        Block const& blockAbove = region.getBlock(BlockPos(targetX, topY, targetZ));
+                                        std::string aboveName = blockAbove.getTypeName();
+
+                                        if (aboveName == "minecraft:air" || aboveName == "air" ||
+                                            aboveName.find("barrier") != std::string::npos ||
+                                            aboveName.find("light_block") != std::string::npos ||
+                                            aboveName.find("structure_void") != std::string::npos ||
+                                            aboveName.find("placeholder") != std::string::npos ||
+                                            aboveName.find("unknown") != std::string::npos ||
+                                            aboveName.find("info_update") != std::string::npos) {
+                                        } else if (aboveName.find("snow") != std::string::npos) {
+                                            g_mapColorsBack[arrX][arrZ] = mce::Color(0.95f, 0.98f, 1.0f, 1.0f);
+                                            blockName = "";
+                                        } else {
+                                            blockName = aboveName;
+                                        }
+
+                                        if (!blockName.empty()) {
+                                            int cellX = targetX >> 2;
+                                            int cellZ = targetZ >> 2;
+                                            if (cellX != s_biomeCellX || cellZ != s_biomeCellZ) {
+                                                s_biomeCellX = cellX; s_biomeCellZ = cellZ;
+                                                try {
+                                                    auto const& biome = region.getBiome(BlockPos(targetX, topY - 1, targetZ));
+                                                    std::string newBiomeName = biome.mHash->getString();
+                                                    if (s_biomeName != newBiomeName) {
+                                                        s_biomeName = newBiomeName;
+                                                        getBiomeTints(s_biomeName, s_cachedGrass, s_cachedFoliage, s_cachedWater);
+                                                    }
+                                                } catch (...) {
+                                                    if (!s_biomeName.empty()) { s_biomeName = ""; }
+                                                }
+                                            }
+
+                                            static std::unordered_map<size_t, mce::Color> s_globalColorCache;
+                                            if (s_globalColorCache.size() > 20000) s_globalColorCache.clear();
+
+                                            size_t cacheKey = hasher(blockName) ^ (hasher(s_biomeName) << 1);
+                                            auto it = s_globalColorCache.find(cacheKey);
+
+                                            if (it != s_globalColorCache.end()) {
+                                                g_mapColorsBack[arrX][arrZ] = it->second;
+                                            } else {
+                                                mce::Color calculatedColor = getBlockColor(blockName, s_cachedGrass, s_cachedFoliage, s_cachedWater);
+                                                s_globalColorCache[cacheKey] = calculatedColor;
+                                                g_mapColorsBack[arrX][arrZ] = calculatedColor;
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    g_mapColorsBack[arrX][arrZ] = mce::Color(0.0f, 0.0f, 0.0f, 0.0f);
+                                }
                             }
 
                             currentCol++;
@@ -744,20 +836,22 @@ LL_TYPE_INSTANCE_HOOK(
                             g_mapDataUpdated.store(true);
                         }
 
-                        using ColorGrid = mce::Color[MAP_DATA_SIZE][MAP_DATA_SIZE];
-                        using HeightGrid = float[MAP_DATA_SIZE][MAP_DATA_SIZE];
-                        auto asyncColors = new ColorGrid;
-                        auto asyncHeights = new HeightGrid;
-                        std::memcpy(asyncColors, g_mapColorsBack, sizeof(g_mapColorsBack));
-                        std::memcpy(asyncHeights, g_mapHeightsBack, sizeof(g_mapHeightsBack));
-                        int asyncX = currentScanX;
-                        int asyncZ = currentScanZ;
+                        if (!MapRenderState::caveMode) {
+                            using ColorGrid = mce::Color[MAP_DATA_SIZE][MAP_DATA_SIZE];
+                            using HeightGrid = float[MAP_DATA_SIZE][MAP_DATA_SIZE];
+                            auto asyncColors = new ColorGrid;
+                            auto asyncHeights = new HeightGrid;
+                            std::memcpy(asyncColors, g_mapColorsBack, sizeof(g_mapColorsBack));
+                            std::memcpy(asyncHeights, g_mapHeightsBack, sizeof(g_mapHeightsBack));
+                            int asyncX = currentScanX;
+                            int asyncZ = currentScanZ;
 
-                        std::thread([asyncX, asyncZ, asyncColors, asyncHeights]() {
-                            MapCacheManager::UpdateFromScan(asyncX, asyncZ, asyncColors, asyncHeights);
-                            delete[] asyncColors;
-                            delete[] asyncHeights;
-                        }).detach();
+                            std::thread([asyncX, asyncZ, asyncColors, asyncHeights]() {
+                                MapCacheManager::UpdateFromScan(asyncX, asyncZ, asyncColors, asyncHeights);
+                                delete[] asyncColors;
+                                delete[] asyncHeights;
+                            }).detach();
+                        }
                     }
                 }
             } catch (...) {}
