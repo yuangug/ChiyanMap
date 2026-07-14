@@ -422,9 +422,33 @@ namespace DX11Hook {
             std::string path = GetModDir() + "heads/" + fileIt->second;
             srv = LoadPNGAsTexture(path);
         }
+        // 如果开头带 minecraft:，尝试去掉前缀再查
+        if (!srv && typeName.size() > 10 && typeName.substr(0, 10) == "minecraft:") {
+            std::string shortName = typeName.substr(10);
+            auto fileIt2 = g_typeToFaceFile.find(shortName);
+            if (fileIt2 != g_typeToFaceFile.end()) {
+                std::string path = GetModDir() + "heads/" + fileIt2->second;
+                srv = LoadPNGAsTexture(path);
+            }
+        }
+        // 如果没有 minecraft: 前缀，尝试加上再查
+        if (!srv) {
+            std::string prefixed = "minecraft:" + typeName;
+            auto fileIt2 = g_typeToFaceFile.find(prefixed);
+            if (fileIt2 != g_typeToFaceFile.end()) {
+                std::string path = GetModDir() + "heads/" + fileIt2->second;
+                srv = LoadPNGAsTexture(path);
+            }
+        }
         // 失败则程序化生成
         if (!srv) {
             auto faceIt = g_typeToFace.find(typeName);
+            if (faceIt == g_typeToFace.end() && typeName.size() > 10 && typeName.substr(0, 10) == "minecraft:") {
+                faceIt = g_typeToFace.find(typeName.substr(10));
+            }
+            if (faceIt == g_typeToFace.end()) {
+                faceIt = g_typeToFace.find("minecraft:" + typeName);
+            }
             if (faceIt != g_typeToFace.end()) {
                 srv = CreateProgrammaticFaceTexture(faceIt->second);
             }

@@ -621,6 +621,7 @@ LL_TYPE_INSTANCE_HOOK(
         static int  currentRow   = -MAP_DATA_RADIUS;
         static int  currentCol   = -MAP_DATA_RADIUS;
         static int  ticksSinceScan = 0; 
+        static bool prevCave     = false;
 
         int px = g_playerBlockX;
         int pz = g_playerBlockZ;
@@ -632,7 +633,7 @@ LL_TYPE_INSTANCE_HOOK(
             ticksSinceScan = 0;
             
             // 自动检测洞穴模式
-            bool prevCave = MapRenderState::caveMode;
+            prevCave = MapRenderState::caveMode;
             if (MapRenderState::currentDimensionId == 1) {
                 MapRenderState::caveMode = true;
             } else {
@@ -643,14 +644,23 @@ LL_TYPE_INSTANCE_HOOK(
                 std::memset(g_mapColors, 0, sizeof(g_mapColors));
                 std::memset(g_mapHeights, 0, sizeof(g_mapHeights));
                 g_mapDataUpdated.store(true);
-            }
-            if (MapRenderState::caveMode) {
-                MapRenderState::caveScanY = (int)g_playerY;
+                if (MapRenderState::caveMode) {
+                    MapRenderState::caveScanY = (int)g_playerY;
+                }
             }
             
             isScanning = true;
             currentRow = -MAP_DATA_RADIUS;
             currentCol = -MAP_DATA_RADIUS;
+        }
+
+        if (isScanning) {
+            // 扫描中如果模式改变，立即中止并重新触发
+            if (MapRenderState::caveMode != prevCave) {
+                isScanning = false;
+                currentScanX = -99999;
+                ticksSinceScan = 999;
+            }
         }
 
         if (isScanning) {
@@ -836,7 +846,7 @@ LL_TYPE_INSTANCE_HOOK(
                             g_mapDataUpdated.store(true);
                         }
 
-                        if (!MapRenderState::caveMode) {
+                        {
                             using ColorGrid = mce::Color[MAP_DATA_SIZE][MAP_DATA_SIZE];
                             using HeightGrid = float[MAP_DATA_SIZE][MAP_DATA_SIZE];
                             auto asyncColors = new ColorGrid;
@@ -845,9 +855,10 @@ LL_TYPE_INSTANCE_HOOK(
                             std::memcpy(asyncHeights, g_mapHeightsBack, sizeof(g_mapHeightsBack));
                             int asyncX = currentScanX;
                             int asyncZ = currentScanZ;
+                            bool cave = MapRenderState::caveMode;
 
-                            std::thread([asyncX, asyncZ, asyncColors, asyncHeights]() {
-                                MapCacheManager::UpdateFromScan(asyncX, asyncZ, asyncColors, asyncHeights);
+                            std::thread([asyncX, asyncZ, asyncColors, asyncHeights, cave]() {
+                                MapCacheManager::UpdateFromScan(asyncX, asyncZ, asyncColors, asyncHeights, cave);
                                 delete[] asyncColors;
                                 delete[] asyncHeights;
                             }).detach();

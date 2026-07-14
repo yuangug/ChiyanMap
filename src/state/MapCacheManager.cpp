@@ -113,7 +113,7 @@ namespace MapCacheManager {
         g_loadQueue.clear();
     }
 
-    void UpdateFromScan(int centerX, int centerZ, mce::Color scanColors[MAP_DATA_SIZE][MAP_DATA_SIZE], float scanHeights[MAP_DATA_SIZE][MAP_DATA_SIZE]) {
+    void UpdateFromScan(int centerX, int centerZ, mce::Color scanColors[MAP_DATA_SIZE][MAP_DATA_SIZE], float scanHeights[MAP_DATA_SIZE][MAP_DATA_SIZE], bool caveMode) {
         std::lock_guard<std::mutex> lock(g_cacheMutex);
         if (g_cacheDir.empty()) return; // 未进世界前禁止写入
         int startX = centerX - MAP_DATA_RADIUS; int startZ = centerZ - MAP_DATA_RADIUS;
@@ -163,7 +163,7 @@ namespace MapCacheManager {
                 region->colors[index + 2] = (uint8_t)(std::clamp(c.b * shade, 0.0f, 1.0f) * 255.0f);
                 region->colors[index + 3] = (uint8_t)(c.a * 255.0f);
                 
-                region->dirty = true;
+                if (!caveMode) region->dirty = true;
                 region->textureDirty = true;
             }
         }

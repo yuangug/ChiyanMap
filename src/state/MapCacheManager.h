@@ -30,7 +30,7 @@ namespace MapCacheManager {
 
     void Init();
     void Shutdown();
-    void UpdateFromScan(int centerX, int centerZ, mce::Color scanColors[MAP_DATA_SIZE][MAP_DATA_SIZE], float scanHeights[MAP_DATA_SIZE][MAP_DATA_SIZE]);
+    void UpdateFromScan(int centerX, int centerZ, mce::Color scanColors[MAP_DATA_SIZE][MAP_DATA_SIZE], float scanHeights[MAP_DATA_SIZE][MAP_DATA_SIZE], bool caveMode = false);
     bool FetchRegionTextureData(uint64_t hash, uint8_t* outBuffer);
     
     // [新增] 当 GPU 繁忙时，退回纹理更新请求
