@@ -345,13 +345,15 @@ inline mce::Color getBlockColor(std::string const& name, mce::Color grassCol, mc
 
     if (name.find("obsidian") != std::string::npos) return mce::Color(0.10f, 0.10f, 0.18f, 1.0f);
 
+    if (name.find("deepslate") != std::string::npos && name.find("ore") == std::string::npos) return mce::Color(0.25f, 0.25f, 0.28f, 1.0f);
+
     if (name.find("copper") != std::string::npos) {
         if (name.find("oxidized") != std::string::npos) return mce::Color(0.36f, 0.68f, 0.49f, 1.0f);
         if (name.find("weathered") != std::string::npos) return mce::Color(0.42f, 0.66f, 0.60f, 1.0f);
         if (name.find("exposed") != std::string::npos) return mce::Color(0.55f, 0.71f, 0.63f, 1.0f);
         if (name.find("raw_") != std::string::npos) return mce::Color(0.77f, 0.54f, 0.35f, 1.0f);
         if (name.find("ore") != std::string::npos) {
-            if (name.find("deepslate") != std::string::npos) return mce::Color(0.54f, 0.43f, 0.35f, 1.0f);
+            if (name.find("deepslate") != std::string::npos) return mce::Color(0.45f, 0.35f, 0.30f, 1.0f);
             return mce::Color(0.77f, 0.49f, 0.35f, 1.0f);
         }
         return mce::Color(0.88f, 0.49f, 0.24f, 1.0f); // 普通铜块
@@ -360,6 +362,8 @@ inline mce::Color getBlockColor(std::string const& name, mce::Color grassCol, mc
     if (name.find("planks") != std::string::npos || name.find("oak") != std::string::npos || name.find("spruce") != std::string::npos || name.find("birch") != std::string::npos || name.find("jungle") != std::string::npos || name.find("acacia") != std::string::npos || name.find("dark_oak") != std::string::npos) return mce::Color(0.65f, 0.45f, 0.25f, 1.0f);
     if (name.find("wood") != std::string::npos || name.find("log") != std::string::npos || name.find("stem") != std::string::npos || name.find("stairs") != std::string::npos || name.find("slab") != std::string::npos || name.find("fence") != std::string::npos || name.find("door") != std::string::npos || name.find("trapdoor") != std::string::npos || name.find("sign") != std::string::npos || name.find("chest") != std::string::npos) return mce::Color(0.55f, 0.40f, 0.20f, 1.0f);
     if (name.find("stone") != std::string::npos || name.find("cobble") != std::string::npos || name.find("andesite") != std::string::npos || name.find("diorite") != std::string::npos || name.find("granite") != std::string::npos || name.find("tuff") != std::string::npos || name.find("brick") != std::string::npos || name.find("wall") != std::string::npos || name.find("gravel") != std::string::npos || name.find("clay") != std::string::npos) return mce::Color(0.55f, 0.55f, 0.55f, 1.0f);
+
+    if (name.find("deepslate") != std::string::npos) return mce::Color(0.30f, 0.28f, 0.32f, 1.0f);
 
     unsigned int h = 0;
     for (char c : name) h = h * 31 + c;
