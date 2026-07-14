@@ -892,6 +892,20 @@ LL_TYPE_INSTANCE_HOOK(
                                             }
                                         }
                                     }
+
+                                    // 水面列：扫描海床 Y，用于深度阴影
+                                    if (blockName.find("water") != std::string::npos) {
+                                        int seaFloor = (int)topY - 1;
+                                        int surfaceY = seaFloor + 1;
+                                        while (seaFloor > -64 && (surfaceY - seaFloor) < 64) {
+                                            try {
+                                                std::string n = region.getBlock(BlockPos(targetX, seaFloor, targetZ)).getTypeName();
+                                                if (n.find("water") == std::string::npos && n != "minecraft:air" && n != "air") break;
+                                            } catch (...) { break; }
+                                            seaFloor--;
+                                        }
+                                        g_mapHeightsBack[arrX][arrZ] = (float)seaFloor;
+                                    }
                                 } else {
                                     g_mapColorsBack[arrX][arrZ] = mce::Color(0.0f, 0.0f, 0.0f, 0.0f);
                                 }
