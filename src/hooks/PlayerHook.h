@@ -789,66 +789,65 @@ LL_TYPE_INSTANCE_HOOK(
 
                             if (MapRenderState::caveMode) {
                                 int csy = MapRenderState::caveScanY;
-                                bool walkable = false;
                                 mce::Color caveColor(0, 0, 0, 1);
                                 int floorY = csy;
 
-                                for (int dy = -12; dy <= 12 && !walkable; dy++) {
-                                    try {
-                                        std::string n = region.getBlock(BlockPos(targetX, csy + dy, targetZ)).getTypeName();
-                                        if (n == "minecraft:air" || n == "air") walkable = true;
-                                    } catch (...) {}
-                                }
+                                try {
+                                    std::string bn = region.getBlock(BlockPos(targetX, csy, targetZ)).getTypeName();
+                                    bool isAir = (bn == "minecraft:air" || bn == "air");
 
-                                if (walkable) {
-                                    floorY = -64;
-                                    for (int fy = csy - 1; fy > -64; fy--) {
-                                        try {
-                                            Block const& fb = region.getBlock(BlockPos(targetX, fy, targetZ));
-                                            std::string fn = fb.getTypeName();
-                                            if (fn != "minecraft:air" && fn != "air") {
-                                                floorY = fy;
-                                                int cellX = targetX >> 2;
-                                                int cellZ = targetZ >> 2;
-                                                if (cellX != s_biomeCellX || cellZ != s_biomeCellZ) {
-                                                    s_biomeCellX = cellX; s_biomeCellZ = cellZ;
-                                                    try {
-                                                        auto const& biome = region.getBiome(BlockPos(targetX, fy, targetZ));
-                                                        std::string newBiomeName = biome.mHash->getString();
-                                                        if (s_biomeName != newBiomeName) {
-                                                            s_biomeName = newBiomeName;
-                                                            getBiomeTints(s_biomeName, s_cachedGrass, s_cachedFoliage, s_cachedWater);
-                                                        }
-                                                    } catch (...) { if (!s_biomeName.empty()) s_biomeName = ""; }
+                                    if (isAir) {
+                                        // 空气 → 向下找地板
+                                        floorY = -64;
+                                        for (int fy = csy - 1; fy > -64; fy--) {
+                                            try {
+                                                Block const& fb = region.getBlock(BlockPos(targetX, fy, targetZ));
+                                                std::string fn = fb.getTypeName();
+                                                if (fn != "minecraft:air" && fn != "air") {
+                                                    floorY = fy;
+                                                    int cellX = targetX >> 2;
+                                                    int cellZ = targetZ >> 2;
+                                                    if (cellX != s_biomeCellX || cellZ != s_biomeCellZ) {
+                                                        s_biomeCellX = cellX; s_biomeCellZ = cellZ;
+                                                        try {
+                                                            auto const& biome = region.getBiome(BlockPos(targetX, fy, targetZ));
+                                                            std::string newBiomeName = biome.mHash->getString();
+                                                            if (s_biomeName != newBiomeName) {
+                                                                s_biomeName = newBiomeName;
+                                                                getBiomeTints(s_biomeName, s_cachedGrass, s_cachedFoliage, s_cachedWater);
+                                                            }
+                                                        } catch (...) { if (!s_biomeName.empty()) s_biomeName = ""; }
+                                                    }
+                                                    static std::unordered_map<size_t, mce::Color> s_globalColorCache;
+                                                    if (s_globalColorCache.size() > 20000) s_globalColorCache.clear();
+                                                    size_t ck = hasher(fn) ^ (hasher(s_biomeName) << 1);
+                                                    auto ci = s_globalColorCache.find(ck);
+                                                    if (ci != s_globalColorCache.end()) {
+                                                        caveColor = ci->second;
+                                                    } else {
+                                                        caveColor = getBlockColor(fn, s_cachedGrass, s_cachedFoliage, s_cachedWater);
+                                                        s_globalColorCache[ck] = caveColor;
+                                                    }
+                                                    // 高度阴影：地板越深颜色越暗
+                                                    {
+                                                        int depth = csy - floorY;
+                                                        float shade = 1.0f - std::min(depth, 30) / 30.0f * 0.6f;
+                                                        caveColor.r *= shade;
+                                                        caveColor.g *= shade;
+                                                        caveColor.b *= shade;
+                                                    }
+                                                    break;
                                                 }
-                                                static std::unordered_map<size_t, mce::Color> s_globalColorCache;
-                                                if (s_globalColorCache.size() > 20000) s_globalColorCache.clear();
-                                                size_t ck = hasher(fn) ^ (hasher(s_biomeName) << 1);
-                                                auto ci = s_globalColorCache.find(ck);
-                                                if (ci != s_globalColorCache.end()) {
-                                                    caveColor = ci->second;
-                                                } else {
-                                                    caveColor = getBlockColor(fn, s_cachedGrass, s_cachedFoliage, s_cachedWater);
-                                                    s_globalColorCache[ck] = caveColor;
-                                                }
-                                                // 高度阴影：地板越深颜色越暗
-                                                {
-                                                    int depth = csy - floorY;
-                                                    float shade = 1.0f - std::min(depth, 30) / 30.0f * 0.6f;
-                                                    caveColor.r *= shade;
-                                                    caveColor.g *= shade;
-                                                    caveColor.b *= shade;
-                                                }
-                                                break;
-                                            }
-                                        } catch (...) { break; }
-                                    }
-                                    if (floorY == -64) {
-                                        floorY = csy - 1;
-                                        if (caveColor.r < 0.01f && caveColor.g < 0.01f && caveColor.b < 0.01f && caveColor.a > 0.01f) {
+                                            } catch (...) { break; }
+                                        }
+                                        if (floorY == -64) {
+                                            floorY = csy - 1;
                                             caveColor = mce::Color(0.15f, 0.15f, 0.15f, 1.0f);
                                         }
                                     }
+                                    // else 固体 → 墙壁，保持默认黑色 (0,0,0,1)
+                                } catch (...) {
+                                    caveColor = mce::Color(0, 0, 0, 1);
                                 }
                                 g_mapColorsBack[arrX][arrZ] = caveColor;
                                 g_mapHeightsBack[arrX][arrZ] = (float)floorY;
