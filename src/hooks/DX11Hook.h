@@ -1022,19 +1022,19 @@ namespace DX11Hook {
                 const int segs = 48;
                 draw_list->PrimReserve(segs * 3, segs + 2);
                 ImVec2 ctr_uv((uv0.x + uv1.x) * 0.5f, (uv0.y + uv1.y) * 0.5f);
-                unsigned int centerIdx = draw_list->_VtxCurrentIdx;
+                unsigned int centerIdx = 0;
                 draw_list->PrimWriteVtx(ImVec2(cx, cy), ctr_uv, IM_COL32_WHITE);
                 unsigned int prevIdx = 0;
                 for (int i = 0; i <= segs; i++) {
                     float a = (float)i / (float)segs * 2.0f * 3.14159265f;
                     float u_rel = 0.5f + 0.5f * cos(a + yawRad);
                     float v_rel = 0.5f + 0.5f * sin(a + yawRad);
-                    unsigned int curIdx = draw_list->_VtxCurrentIdx;
                     draw_list->PrimWriteVtx(
                         ImVec2(cx + IM_MAP_R * cos(a), cy + IM_MAP_R * sin(a)),
                         ImVec2(uv0.x + (uv1.x - uv0.x) * u_rel, uv0.y + (uv1.y - uv0.y) * v_rel),
                         IM_COL32_WHITE
                     );
+                    unsigned int curIdx = 1 + i;
                     if (i > 0) {
                         draw_list->PrimWriteIdx((ImDrawIdx)(int)centerIdx);
                         draw_list->PrimWriteIdx((ImDrawIdx)(int)prevIdx);
