@@ -619,6 +619,7 @@ LL_TYPE_INSTANCE_HOOK(
                 // 下界自动洞穴模式，跳过地表缓存预加载
                 if (dimId == 1) {
                     MapRenderState::caveMode = true;
+                    MapRenderState::caveScanY = (int)g_playerY;
                 } else {
                     MapRenderState::caveMode = false;
                     MapCacheManager::PreloadScanBuffer(g_playerBlockX, g_playerBlockZ, g_mapColors, g_mapHeights);
