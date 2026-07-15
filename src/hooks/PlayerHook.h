@@ -789,12 +789,11 @@ LL_TYPE_INSTANCE_HOOK(
 
                             if (MapRenderState::caveMode) {
                                 int csy = MapRenderState::caveScanY;
-                                const int MAX_FLOOR_DEPTH = 20;
                                 bool walkable = false;
                                 mce::Color caveColor(0, 0, 0, 1);
                                 int floorY = csy;
 
-                                for (int dy = -MapRenderState::caveRange; dy <= MapRenderState::caveRange && !walkable; dy++) {
+                                for (int dy = -12; dy <= 12 && !walkable; dy++) {
                                     try {
                                         std::string n = region.getBlock(BlockPos(targetX, csy + dy, targetZ)).getTypeName();
                                         if (n == "minecraft:air" || n == "air") walkable = true;
@@ -803,7 +802,7 @@ LL_TYPE_INSTANCE_HOOK(
 
                                 if (walkable) {
                                     floorY = -64;
-                                    for (int fy = csy - 1; fy >= csy - MAX_FLOOR_DEPTH && fy > -64; fy--) {
+                                    for (int fy = csy - 1; fy > -64; fy--) {
                                         try {
                                             Block const& fb = region.getBlock(BlockPos(targetX, fy, targetZ));
                                             std::string fn = fb.getTypeName();
@@ -832,12 +831,20 @@ LL_TYPE_INSTANCE_HOOK(
                                                     caveColor = getBlockColor(fn, s_cachedGrass, s_cachedFoliage, s_cachedWater);
                                                     s_globalColorCache[ck] = caveColor;
                                                 }
+                                                // 高度阴影：地板越深颜色越暗
+                                                {
+                                                    int depth = csy - floorY;
+                                                    float shade = 1.0f - std::min(depth, 30) / 30.0f * 0.6f;
+                                                    caveColor.r *= shade;
+                                                    caveColor.g *= shade;
+                                                    caveColor.b *= shade;
+                                                }
                                                 break;
                                             }
                                         } catch (...) { break; }
                                     }
                                     if (floorY == -64) {
-                                        floorY = csy - MAX_FLOOR_DEPTH;
+                                        floorY = csy - 1;
                                         if (caveColor.r < 0.01f && caveColor.g < 0.01f && caveColor.b < 0.01f && caveColor.a > 0.01f) {
                                             caveColor = mce::Color(0.15f, 0.15f, 0.15f, 1.0f);
                                         }
