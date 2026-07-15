@@ -828,14 +828,6 @@ LL_TYPE_INSTANCE_HOOK(
                                                         caveColor = getBlockColor(fn, s_cachedGrass, s_cachedFoliage, s_cachedWater);
                                                         s_globalColorCache[ck] = caveColor;
                                                     }
-                                                    // 高度阴影：地板越深颜色越暗
-                                                    {
-                                                        int depth = csy - floorY;
-                                                        float shade = 1.0f - std::min(depth, 30) / 30.0f * 0.6f;
-                                                        caveColor.r *= shade;
-                                                        caveColor.g *= shade;
-                                                        caveColor.b *= shade;
-                                                    }
                                                     break;
                                                 }
                                             } catch (...) { break; }
