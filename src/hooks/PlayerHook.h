@@ -793,8 +793,14 @@ LL_TYPE_INSTANCE_HOOK(
                                 int floorY = csy;
 
                                 try {
-                                    std::string bn = region.getBlock(BlockPos(targetX, csy, targetZ)).getTypeName();
-                                    bool isAir = (bn == "minecraft:air" || bn == "air");
+                                    // 从 csy 向上扫描到第一个固体方块（天花板），途中发现空气即为通道
+                                    bool isAir = false;
+                                    for (int dy = 0; ; dy++) {
+                                        std::string bn = region.getBlock(BlockPos(targetX, csy + dy, targetZ)).getTypeName();
+                                        bool solid = (bn != "minecraft:air" && bn != "air");
+                                        if (solid) break; // 碰到天花板停止
+                                        isAir = true;     // 至少有一格空气
+                                    }
 
                                     if (isAir) {
                                         // 空气 → 向下找地板
