@@ -88,6 +88,7 @@ extern float g_playerZ;
 extern float g_playerYaw;
 extern bool  g_hasPlayer;
 extern LocalPlayer* g_localPlayer;
+extern std::string g_localPlayerUuid;
 extern ClientInstance* g_clientInstance;
 extern Vec3 g_prevPhysicsPos;
 extern Vec3 g_currPhysicsPos;
@@ -439,13 +440,17 @@ inline mce::Color getBlockColor(std::string const& name, mce::Color grassCol, mc
 // 自动检测玩家是否在地下（头顶 20 格内有实体方块）
 inline bool IsPlayerUnderground(BlockSource* region, int px, int py, int pz) {
     if (!region) return false;
-    for (int y = py + 2; y <= py + 22 && y < 319; y++) {
-        try {
-            auto name = region->getBlock(BlockPos(px, y, pz)).getTypeName();
-            if (name != "minecraft:air" && name != "air") return true;
-        } catch (...) { break; }
+    int hits = 0;
+    int offsets[5][2] = {{0,0}, {1,0}, {-1,0}, {0,1}, {0,-1}};
+    for (auto& off : offsets) {
+        for (int y = py + 2; y <= py + 22 && y < 319; y++) {
+            try {
+                auto name = region->getBlock(BlockPos(px + off[0], y, pz + off[1])).getTypeName();
+                if (name != "minecraft:air" && name != "air" && name.find("leaves") == std::string::npos && name.find("log") == std::string::npos) { hits++; break; }
+            } catch (...) { break; }
+        }
     }
-    return false;
+    return hits >= 3;
 }
 
 LL_TYPE_INSTANCE_HOOK(
@@ -481,6 +486,7 @@ LL_TYPE_INSTANCE_HOOK(
             g_playerYaw = player->getRotation().y;
             g_hasPlayer   = true;
             g_localPlayer = player;
+            g_localPlayerUuid = static_cast<std::string>(player->getUuid());
 
         // ==========================================
         // [防窒息 & 神躯护体] 智能高度推算与无敌降落引擎
@@ -616,6 +622,8 @@ LL_TYPE_INSTANCE_HOOK(
                 } else {
                     MapRenderState::caveMode = false;
                     MapCacheManager::PreloadScanBuffer(g_playerBlockX, g_playerBlockZ, g_mapColors, g_mapHeights);
+                    g_lastRenderX = g_playerBlockX;
+                    g_lastRenderZ = g_playerBlockZ;
                 }
                 
                 MapRenderState::clearGPUCache.store(true); 
@@ -900,7 +908,7 @@ LL_TYPE_INSTANCE_HOOK(
                                         while (seaFloor > -64 && (surfaceY - seaFloor) < 64) {
                                             try {
                                                 std::string n = region.getBlock(BlockPos(targetX, seaFloor, targetZ)).getTypeName();
-                                                if (n.find("water") == std::string::npos && n != "minecraft:air" && n != "air") break;
+                                                if (n.find("water") == std::string::npos && n.find("kelp") == std::string::npos && n.find("seagrass") == std::string::npos && n != "minecraft:air" && n != "air") break;
                                             } catch (...) { break; }
                                             seaFloor--;
                                         }

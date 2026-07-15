@@ -66,7 +66,8 @@ namespace LanguageManager {
     "SAVE_EXIT": "Save && Exit",
     "DONT_SAVE": "Don't Save",
     "LANG_SELECT": "Language",
-    "CAVE_MODE": "\u26cf Cave Mode Y=%d"
+    "CAVE_MODE": "\u26cf Cave Mode Y=%d",
+    "ROTATE_MAP": "Rotate Map with Player"
 })json"},
         {"zh_CN", R"json({
     "BIGMAP_TITLE": "\u8d64\u7130\u5168\u5c40\u5927\u5730\u56fe | \u7f29\u653e: %.1fx",
@@ -117,7 +118,8 @@ namespace LanguageManager {
     "SAVE_EXIT": "\u4fdd\u5b58\u5e76\u9000\u51fa",
     "DONT_SAVE": "\u4e0d\u4fdd\u5b58",
     "LANG_SELECT": "\u8bed\u8a00",
-    "CAVE_MODE": "\u26cf \u6d1e\u7a74\u6a21\u5f0f Y=%d"
+    "CAVE_MODE": "\u26cf \u6d1e\u7a74\u6a21\u5f0f Y=%d",
+    "ROTATE_MAP": "跟随玩家旋转"
 })json"},
         {"zh_TW", R"json({
     "BIGMAP_TITLE": "\u8d64\u7130\u5168\u5c40\u5730\u5716 | \u7e2e\u653e: %.1fx",
@@ -168,7 +170,8 @@ namespace LanguageManager {
     "SAVE_EXIT": "\u4fdd\u5b58\u4e26\u9000\u51fa",
     "DONT_SAVE": "\u4e0d\u4fdd\u5b58",
     "LANG_SELECT": "\u8a9e\u8a00",
-    "CAVE_MODE": "\u26cf \u6d1e\u7a74\u6a21\u5f0f Y=%d"
+    "CAVE_MODE": "\u26cf \u6d1e\u7a74\u6a21\u5f0f Y=%d",
+    "ROTATE_MAP": "跟隨玩家旋轉"
 })json"},
         {"de", R"json({
     "BIGMAP_TITLE": "Chiyan Weltkarte | Zoom: %.1fx",
@@ -218,7 +221,8 @@ namespace LanguageManager {
     "POSITION_Y": "Y Offset",
     "SAVE_EXIT": "Save && Exit",
     "DONT_SAVE": "Don't Save",
-    "LANG_SELECT": "Sprache"
+    "LANG_SELECT": "Sprache",
+    "ROTATE_MAP": "Karte mit Spieler drehen"
 })json"},
         {"fr", R"json({
     "BIGMAP_TITLE": "Carte globale de Chiyan | Zoom : %.1fx",
@@ -268,7 +272,8 @@ namespace LanguageManager {
     "POSITION_Y": "Y Offset",
     "SAVE_EXIT": "Save && Exit",
     "DONT_SAVE": "Don't Save",
-    "LANG_SELECT": "Langue"
+    "LANG_SELECT": "Langue",
+    "ROTATE_MAP": "Rotation de la carte"
 })json"},
         {"id", R"json({
     "BIGMAP_TITLE": "Peta Besar Chiyan | Zoom: %.1fx",
@@ -318,7 +323,8 @@ namespace LanguageManager {
     "POSITION_Y": "Y Offset",
     "SAVE_EXIT": "Save && Exit",
     "DONT_SAVE": "Don't Save",
-    "LANG_SELECT": "Bahasa"
+    "LANG_SELECT": "Bahasa",
+    "ROTATE_MAP": "Putar Peta dengan Pemain"
 })json"},
         {"it", R"json({
     "BIGMAP_TITLE": "Mappa globale di Chiyan | Zoom: %.1fx",
@@ -368,7 +374,8 @@ namespace LanguageManager {
     "POSITION_Y": "Y Offset",
     "SAVE_EXIT": "Save && Exit",
     "DONT_SAVE": "Don't Save",
-    "LANG_SELECT": "Lingua"
+    "LANG_SELECT": "Lingua",
+    "ROTATE_MAP": "Ruota mappa con giocatore"
 })json"},
         {"ja", R"json({
     "BIGMAP_TITLE": "\u8d64\u7130\u5168\u4f53\u30de\u30c3\u30d7 | \u30ba\u30fc\u30e0: %.1fx",
@@ -418,7 +425,8 @@ namespace LanguageManager {
     "POSITION_Y": "Y Offset",
     "SAVE_EXIT": "Save && Exit",
     "DONT_SAVE": "Don't Save",
-    "LANG_SELECT": "\u8a00\u8a9e"
+    "LANG_SELECT": "\u8a00\u8a9e",
+    "ROTATE_MAP": "マップをプレイヤーと回転"
 })json"},
         {"ko", R"json({
     "BIGMAP_TITLE": "\uc9c0\uc5f0 \uc804\uccb4 \uc9c0\ub3c4 | \ubc30\uc2a8: %.1fx",
@@ -468,7 +476,8 @@ namespace LanguageManager {
     "POSITION_Y": "Y Offset",
     "SAVE_EXIT": "Save && Exit",
     "DONT_SAVE": "Don't Save",
-    "LANG_SELECT": "\uc5b8\uc5b4"
+    "LANG_SELECT": "\uc5b8\uc5b4",
+    "ROTATE_MAP": "지도를 플레이어와 함께 회전"
 })json"},
         {"pt_BR", R"json({
     "BIGMAP_TITLE": "Mapa Geral de Chiyan | Zoom: %.1fx",
@@ -518,7 +527,8 @@ namespace LanguageManager {
     "POSITION_Y": "Y Offset",
     "SAVE_EXIT": "Save && Exit",
     "DONT_SAVE": "Don't Save",
-    "LANG_SELECT": "Idioma"
+    "LANG_SELECT": "Idioma",
+    "ROTATE_MAP": "Girar mapa com jogador"
 })json"},
         {"ru", R"json({
     "BIGMAP_TITLE": "\u0411\u043e\u043b\u044c\u0448\u0430\u044f \u043a\u0430\u0440\u0442\u0430 Chiyan | \u041c\u0430\u0441\u0448\u0442\u0430\u0431: %.1fx",
@@ -568,7 +578,8 @@ namespace LanguageManager {
     "POSITION_Y": "Y Offset",
     "SAVE_EXIT": "Save && Exit",
     "DONT_SAVE": "Don't Save",
-    "LANG_SELECT": "\u042f\u0437\u044b\u043a"
+    "LANG_SELECT": "\u042f\u0437\u044b\u043a",
+    "ROTATE_MAP": "Вращать карту с игроком"
 })json"},
         {"th", R"json({
     "BIGMAP_TITLE": "\u0e41\u0e1c\u0e19\u0e17\u0e35\u0e48\u0e42\u0e25\u0e01 Chiyan | \u0e0b\u0e39\u0e21: %.1fx",
@@ -618,7 +629,8 @@ namespace LanguageManager {
     "POSITION_Y": "Y Offset",
     "SAVE_EXIT": "Save && Exit",
     "DONT_SAVE": "Don't Save",
-    "LANG_SELECT": "\u0e20\u0e32\u0e29\u0e32"
+    "LANG_SELECT": "\u0e20\u0e32\u0e29\u0e32",
+    "ROTATE_MAP": "หมุนแผนที่ตามผู้เล่น"
 })json"},
         {"tr", R"json({
     "BIGMAP_TITLE": "Chiyan Genel Haritasi | Yakinlastirma: %.1fx",
@@ -668,7 +680,8 @@ namespace LanguageManager {
     "POSITION_Y": "Y Offset",
     "SAVE_EXIT": "Save && Exit",
     "DONT_SAVE": "Don't Save",
-    "LANG_SELECT": "Dil"
+    "LANG_SELECT": "Dil",
+    "ROTATE_MAP": "Haritayı oyuncuyla döndür"
 })json"},
         {"uk", R"json({
     "BIGMAP_TITLE": "\u0412\u0435\u043b\u0438\u043a\u0430 \u043a\u0430\u0440\u0442\u0430 Chiyan | \u041c\u0430\u0441\u0448\u0442\u0430\u0431: %.1fx",
@@ -718,7 +731,8 @@ namespace LanguageManager {
     "POSITION_Y": "Y Offset",
     "SAVE_EXIT": "Save && Exit",
     "DONT_SAVE": "Don't Save",
-    "LANG_SELECT": "\u041c\u043e\u0432\u0430"
+    "LANG_SELECT": "\u041c\u043e\u0432\u0430",
+    "ROTATE_MAP": "Обертати карту з гравцем"
 })json"},
         {"vi", R"json({
     "BIGMAP_TITLE": "B\u1ea3n \u0111\u1ed3 l\u1edbn Chiyan | Thu ph\u00f3ng: %.1fx",
@@ -768,7 +782,8 @@ namespace LanguageManager {
     "POSITION_Y": "Y Offset",
     "SAVE_EXIT": "Save && Exit",
     "DONT_SAVE": "Don't Save",
-    "LANG_SELECT": "Ng\u00f4n ng\u1eef"
+    "LANG_SELECT": "Ng\u00f4n ng\u1eef",
+    "ROTATE_MAP": "Xoay bản đồ theo người chơi"
 })json"}
     };
 
@@ -883,6 +898,7 @@ namespace LanguageManager {
                 MapRenderState::minimapSize = j.value("minimapSize", 135.0f);
                 MapRenderState::minimapOffsetX = j.value("minimapOffsetX", 0.0f);
                 MapRenderState::minimapOffsetY = j.value("minimapOffsetY", 0.0f);
+                MapRenderState::bigMapRotateWithPlayer = j.value("bigMapRotateWithPlayer", false);
             } catch (...) {
                 g_currentLanguage = "en";
             }
@@ -900,6 +916,7 @@ namespace LanguageManager {
         j["minimapSize"] = MapRenderState::minimapSize;
         j["minimapOffsetX"] = MapRenderState::minimapOffsetX;
         j["minimapOffsetY"] = MapRenderState::minimapOffsetY;
+        j["bigMapRotateWithPlayer"] = MapRenderState::bigMapRotateWithPlayer;
 
         std::ofstream out(filePath);
         if (out.is_open()) {

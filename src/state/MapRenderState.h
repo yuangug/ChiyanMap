@@ -53,6 +53,7 @@ namespace MapRenderState {
     inline float minimapOffsetY = 0.0f; // 小地图Y偏移
     inline float tempMinimapOffsetX = 0.0f; // 临时X偏移（撤销用）
     inline float tempMinimapOffsetY = 0.0f; // 临时Y偏移（撤销用）
+    inline bool bigMapRotateWithPlayer = false; // 小地图跟随玩家旋转（false=上北下南, true=地图旋转指针固定）
 }
 
 // 【全球探索级】：匹配 16 区块能见度的究极扫描半径（513x513个方块）！

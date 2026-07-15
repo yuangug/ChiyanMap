@@ -1,5 +1,6 @@
 #pragma once
 #include <windows.h>
+#include <string>
 // 定义这些宏，避免与 LeviLamina 中的重复定义冲突
 #define D3D12_FEATURE_DATA_D3D12_OPTIONS  D3D12_FEATURE_DATA_D3D12_OPTIONS_LEGACY
 #define D3D12_FEATURE_DATA_ARCHITECTURE  D3D12_FEATURE_DATA_ARCHITECTURE_LEGACY
@@ -33,6 +34,7 @@
 #include "hooks/PlayerHook.h"
 #include "state/MapCacheManager.h"
 #include "state/WaypointManager.h"
+
 #include "state/LanguageManager.h"
 #include <wincodec.h>
 
@@ -986,16 +988,64 @@ namespace DX11Hook {
         ImVec2 mapMin(cx - IM_MAP_R, cy - IM_MAP_R);
         ImVec2 mapMax(cx + IM_MAP_R, cy + IM_MAP_R);
 
+        float playerYaw = g_localPlayer ? g_localPlayer->getRotation().y : 0.0f;
+        float yawRad = (playerYaw + 180.0f) * (3.14159265f / 180.0f);
+        float cosY = std::cos(yawRad);
+        float sinY = std::sin(yawRad);
+        float mapSinY = -sinY;
+        auto rotate = [&](float x, float y) -> ImVec2 { return ImVec2(cx + (x * cosY - y * sinY), cy + (x * sinY + y * cosY)); };
+        auto rotateMap = [&](float x, float y) -> ImVec2 { return ImVec2(cx + (x * cosY - y * mapSinY), cy + (x * mapSinY + y * cosY)); };
+
         if (MapRenderState::isSquareMap) {
             draw_list->AddRectFilled(mapMin, mapMax, IM_COL32(20, 20, 20, 255));
             draw_list->AddCallback(PointSamplerCallback, nullptr);
-            draw_list->AddImage((void*)g_mapTextureView, mapMin, mapMax, uv0, uv1, IM_COL32_WHITE);
+            if (MapRenderState::bigMapRotateWithPlayer) {
+                float hp = IM_MAP_R * 1.414f;
+                float expandedUvR = ZOOM_RADIUS * 1.414f / MAP_DATA_SIZE;
+                ImVec2 eUv0(u - expandedUvR, v - expandedUvR);
+                ImVec2 eUv1(u + expandedUvR, v + expandedUvR);
+                ImVec2 tl = rotateMap(-hp, -hp); ImVec2 tr = rotateMap(hp, -hp);
+                ImVec2 br = rotateMap(hp, hp);  ImVec2 bl = rotateMap(-hp, hp);
+                draw_list->PushClipRect(mapMin, mapMax, true);
+                draw_list->AddImageQuad((void*)g_mapTextureView, tl, tr, br, bl, eUv0, ImVec2(eUv1.x, eUv0.y), eUv1, ImVec2(eUv0.x, eUv1.y));
+                draw_list->PopClipRect();
+            } else {
+                draw_list->AddImage((void*)g_mapTextureView, mapMin, mapMax, uv0, uv1, IM_COL32_WHITE);
+            }
             draw_list->AddCallback(LinearSamplerCallback, nullptr);
             draw_list->AddRect(mapMin, mapMax, IM_COL32(30, 30, 30, 255), 0.0f, 0, 2.0f);
         } else {
             draw_list->AddCircleFilled(ImVec2(cx, cy), IM_MAP_R, IM_COL32(20, 20, 20, 255), 64);
             draw_list->AddCallback(PointSamplerCallback, nullptr);
-            draw_list->AddImageRounded((void*)g_mapTextureView, mapMin, mapMax, uv0, uv1, IM_COL32_WHITE, IM_MAP_R);
+            if (MapRenderState::bigMapRotateWithPlayer) {
+                draw_list->PushTexture((void*)g_mapTextureView);
+                const int segs = 48;
+                draw_list->PrimReserve(segs * 3, segs + 2);
+                ImVec2 ctr_uv((uv0.x + uv1.x) * 0.5f, (uv0.y + uv1.y) * 0.5f);
+                unsigned int centerIdx = draw_list->_VtxCurrentIdx;
+                draw_list->PrimWriteVtx(ImVec2(cx, cy), ctr_uv, IM_COL32_WHITE);
+                unsigned int prevIdx = 0;
+                for (int i = 0; i <= segs; i++) {
+                    float a = (float)i / (float)segs * 2.0f * 3.14159265f;
+                    float u_rel = 0.5f + 0.5f * cos(a + yawRad);
+                    float v_rel = 0.5f + 0.5f * sin(a + yawRad);
+                    unsigned int curIdx = draw_list->_VtxCurrentIdx;
+                    draw_list->PrimWriteVtx(
+                        ImVec2(cx + IM_MAP_R * cos(a), cy + IM_MAP_R * sin(a)),
+                        ImVec2(uv0.x + (uv1.x - uv0.x) * u_rel, uv0.y + (uv1.y - uv0.y) * v_rel),
+                        IM_COL32_WHITE
+                    );
+                    if (i > 0) {
+                        draw_list->PrimWriteIdx((ImDrawIdx)(int)centerIdx);
+                        draw_list->PrimWriteIdx((ImDrawIdx)(int)prevIdx);
+                        draw_list->PrimWriteIdx((ImDrawIdx)(int)curIdx);
+                    }
+                    prevIdx = curIdx;
+                }
+                draw_list->PopTexture();
+            } else {
+                draw_list->AddImageRounded((void*)g_mapTextureView, mapMin, mapMax, uv0, uv1, IM_COL32_WHITE, IM_MAP_R);
+            }
             draw_list->AddCallback(LinearSamplerCallback, nullptr);
             draw_list->AddCircle(ImVec2(cx, cy), IM_MAP_R, IM_COL32(30, 30, 30, 255), 64, 2.0f);
         }
@@ -1018,10 +1068,21 @@ namespace DX11Hook {
         draw_list->AddText(ImVec2(biomePos.x + 1, biomePos.y + 1), IM_COL32(0,0,0,200), biomeStr.c_str());
         draw_list->AddText(biomePos, IM_COL32(220, 220, 220, 255), biomeStr.c_str());
 
-        draw_list->AddText(ImVec2(cx - 8, cy - IM_MAP_R - 20), IM_COL32(220, 220, 255, 255), LanguageManager::GetText("COMPASS_N"));
-        draw_list->AddText(ImVec2(cx - 8, cy + IM_MAP_R - 2), IM_COL32(220, 220, 255, 255), LanguageManager::GetText("COMPASS_S"));
-        draw_list->AddText(ImVec2(cx + IM_MAP_R + 4, cy - 9), IM_COL32(220, 220, 255, 255), LanguageManager::GetText("COMPASS_E"));
-        draw_list->AddText(ImVec2(cx - IM_MAP_R - 20, cy - 9), IM_COL32(220, 220, 255, 255), LanguageManager::GetText("COMPASS_W"));
+        if (MapRenderState::bigMapRotateWithPlayer) {
+            float compassR = IM_MAP_R + 16.0f;
+            auto compassPos = [&](float nx, float nz) -> ImVec2 {
+                return ImVec2(cx + (nx * cosY - nz * mapSinY) * compassR, cy + (nx * mapSinY + nz * cosY) * compassR);
+            };
+            draw_list->AddText(ImVec2(compassPos(0, -1).x - 8, compassPos(0, -1).y - 9), IM_COL32(220, 220, 255, 255), LanguageManager::GetText("COMPASS_N"));
+            draw_list->AddText(ImVec2(compassPos(0, 1).x - 8, compassPos(0, 1).y - 9), IM_COL32(220, 220, 255, 255), LanguageManager::GetText("COMPASS_S"));
+            draw_list->AddText(ImVec2(compassPos(1, 0).x - 8, compassPos(1, 0).y - 9), IM_COL32(220, 220, 255, 255), LanguageManager::GetText("COMPASS_E"));
+            draw_list->AddText(ImVec2(compassPos(-1, 0).x - 8, compassPos(-1, 0).y - 9), IM_COL32(220, 220, 255, 255), LanguageManager::GetText("COMPASS_W"));
+        } else {
+            draw_list->AddText(ImVec2(cx - 8, cy - IM_MAP_R - 20), IM_COL32(220, 220, 255, 255), LanguageManager::GetText("COMPASS_N"));
+            draw_list->AddText(ImVec2(cx - 8, cy + IM_MAP_R - 2), IM_COL32(220, 220, 255, 255), LanguageManager::GetText("COMPASS_S"));
+            draw_list->AddText(ImVec2(cx + IM_MAP_R + 4, cy - 9), IM_COL32(220, 220, 255, 255), LanguageManager::GetText("COMPASS_E"));
+            draw_list->AddText(ImVec2(cx - IM_MAP_R - 20, cy - 9), IM_COL32(220, 220, 255, 255), LanguageManager::GetText("COMPASS_W"));
+        }
 
         {
             char modeBuf[64];
@@ -1044,10 +1105,21 @@ namespace DX11Hook {
 
         float scale = IM_MAP_R / ZOOM_RADIUS; 
         for (const auto& ent : s_cachedEntities) {
-            float edx = ent.x - pX;
-            float edz = ent.z - pZ;
-            float ex = cx + edx * scale;
-            float ez = cy + edz * scale;
+            float edx = ent.x - g_playerX;
+            float edz = ent.z - g_playerZ;
+            if (edx * edx + edz * edz < 4.0f) continue;
+            edx = ent.x - pX;
+            edz = ent.z - pZ;
+            float ex, ez;
+            if (MapRenderState::bigMapRotateWithPlayer) {
+                float rx = edx * cosY - edz * mapSinY;
+                float rz = edx * mapSinY + edz * cosY;
+                ex = cx + rx * scale;
+                ez = cy + rz * scale;
+            } else {
+                ex = cx + edx * scale;
+                ez = cy + edz * scale;
+            }
             
             bool inBounds = false;
             if (MapRenderState::isSquareMap) {
@@ -1093,26 +1165,36 @@ namespace DX11Hook {
                 float physicalDist = std::sqrt(wDx * wDx + wDz * wDz);
                 if (physicalDist < 0.001f) physicalDist = 0.001f;
 
-                float ex = cx + wDx * scale;
-                float ez = cy + wDz * scale;
+                float ex, ez, rwDx, rwDz;
+                if (MapRenderState::bigMapRotateWithPlayer) {
+                    rwDx = wDx * cosY - wDz * mapSinY;
+                    rwDz = wDx * mapSinY + wDz * cosY;
+                    ex = cx + rwDx * scale;
+                    ez = cy + rwDz * scale;
+                } else {
+                    rwDx = wDx; rwDz = wDz;
+                    ex = cx + wDx * scale;
+                    ez = cy + wDz * scale;
+                }
                 
                 bool inMap = false;
                 float edgeX = cx, edgeZ = cy;
 
                 if (MapRenderState::isSquareMap) {
-                    if (std::abs(wDx * scale) <= IM_MAP_R && std::abs(wDz * scale) <= IM_MAP_R) {
+                    if (std::abs(ex - cx) <= IM_MAP_R && std::abs(ez - cy) <= IM_MAP_R) {
                         inMap = true;
                     } else {
-                        float maxDist = std::max(std::abs(wDx), std::abs(wDz));
-                        edgeX = cx + (wDx / maxDist) * IM_MAP_R;
-                        edgeZ = cy + (wDz / maxDist) * IM_MAP_R;
+                        float maxDist = std::max(std::abs(rwDx), std::abs(rwDz));
+                        edgeX = cx + (rwDx / maxDist) * IM_MAP_R;
+                        edgeZ = cy + (rwDz / maxDist) * IM_MAP_R;
                     }
                 } else {
-                    if (physicalDist <= ZOOM_RADIUS) {
+                    float rDist = std::sqrt(rwDx * rwDx + rwDz * rwDz);
+                    if (rDist <= ZOOM_RADIUS) {
                         inMap = true;
                     } else {
-                        edgeX = cx + (wDx / physicalDist) * IM_MAP_R;
-                        edgeZ = cy + (wDz / physicalDist) * IM_MAP_R;
+                        edgeX = cx + (rwDx / rDist) * IM_MAP_R;
+                        edgeZ = cy + (rwDz / rDist) * IM_MAP_R;
                     }
                 }
 
@@ -1124,14 +1206,13 @@ namespace DX11Hook {
             }
         }
 
-        float playerYaw = g_localPlayer ? g_localPlayer->getRotation().y : 0.0f;
-        float yawRad = (playerYaw + 180.0f) * (3.14159265f / 180.0f); 
-        float cosY = std::cos(yawRad);
-        float sinY = std::sin(yawRad);
-        auto rotate = [&](float x, float y) -> ImVec2 { return ImVec2(cx + (x * cosY - y * sinY), cy + (x * sinY + y * cosY)); };
-
-        draw_list->AddTriangleFilled(rotate(0, -10.0f), rotate(-7.0f, 10.0f), rotate(7.0f, 10.0f), IM_COL32(0, 0, 0, 255));
-        draw_list->AddTriangleFilled(rotate(0, -8.0f), rotate(-5.0f, 8.0f), rotate(5.0f, 8.0f), IM_COL32(220, 20, 20, 255));
+        if (MapRenderState::bigMapRotateWithPlayer) {
+            draw_list->AddTriangleFilled(ImVec2(cx, cy - 10.0f), ImVec2(cx - 7.0f, cy + 10.0f), ImVec2(cx + 7.0f, cy + 10.0f), IM_COL32(0, 0, 0, 255));
+            draw_list->AddTriangleFilled(ImVec2(cx, cy - 8.0f), ImVec2(cx - 5.0f, cy + 8.0f), ImVec2(cx + 5.0f, cy + 8.0f), IM_COL32(220, 20, 20, 255));
+        } else {
+            draw_list->AddTriangleFilled(rotate(0, -10.0f), rotate(-7.0f, 10.0f), rotate(7.0f, 10.0f), IM_COL32(0, 0, 0, 255));
+            draw_list->AddTriangleFilled(rotate(0, -8.0f), rotate(-5.0f, 8.0f), rotate(5.0f, 8.0f), IM_COL32(220, 20, 20, 255));
+        }
     }
 
     inline void RenderImGuiXaeroMap() {
@@ -1375,21 +1456,30 @@ namespace DX11Hook {
 
             draw_list->AddCallback(PointSamplerCallback, nullptr);
             
-            for (int rx = startRx; rx <= endRx; rx++) {
-                for (int rz = startRz; rz <= endRz; rz++) {
-                    uint64_t hash = MapCacheManager::GetRegionHash(rx, rz);
-                    UpdateRegionTexture(hash, texturesCreatedThisFrame);
+            if (MapRenderState::caveMode) {
+                float mmCx = cx + MapRenderState::bigMapOffsetX;
+                float mmCy = cy + MapRenderState::bigMapOffsetZ;
+                float mmSz = 513.0f * MapRenderState::bigMapZoom;
+                draw_list->AddImage((void*)g_mapTextureView,
+                    ImVec2(mmCx - mmSz * 0.5f, mmCy - mmSz * 0.5f),
+                    ImVec2(mmCx + mmSz * 0.5f, mmCy + mmSz * 0.5f));
+            } else {
+                for (int rx = startRx; rx <= endRx; rx++) {
+                    for (int rz = startRz; rz <= endRz; rz++) {
+                        uint64_t hash = MapCacheManager::GetRegionHash(rx, rz);
+                        UpdateRegionTexture(hash, texturesCreatedThisFrame);
 
-                    if (g_regionSRVs.find(hash) != g_regionSRVs.end()) {
-                        // 【渲染管线减负】只有包含实际像素的非空贴图才会被加入 ImGui 的 DrawCall 绘制队列！
-                        // 极大减负显卡在微缩大地图时的渲染压力，实现绝对满帧体验。
-                        if (g_regionSRVs[hash] != nullptr) {
-                            float sx_min = std::floor(cx + (rx * 256.0f - g_smoothPX) * MapRenderState::bigMapZoom + MapRenderState::bigMapOffsetX);
-                            float sy_min = std::floor(cy + (rz * 256.0f - g_smoothPZ) * MapRenderState::bigMapZoom + MapRenderState::bigMapOffsetZ);
-                            float sx_max = std::floor(cx + ((rx + 1) * 256.0f - g_smoothPX) * MapRenderState::bigMapZoom + MapRenderState::bigMapOffsetX);
-                            float sy_max = std::floor(cy + ((rz + 1) * 256.0f - g_smoothPZ) * MapRenderState::bigMapZoom + MapRenderState::bigMapOffsetZ);
-                            
-                            draw_list->AddImage((void*)g_regionSRVs[hash], ImVec2(sx_min, sy_min), ImVec2(sx_max, sy_max));
+                        if (g_regionSRVs.find(hash) != g_regionSRVs.end()) {
+                            // 【渲染管线减负】只有包含实际像素的非空贴图才会被加入 ImGui 的 DrawCall 绘制队列！
+                            // 极大减负显卡在微缩大地图时的渲染压力，实现绝对满帧体验。
+                            if (g_regionSRVs[hash] != nullptr) {
+                                float sx_min = std::floor(cx + (rx * 256.0f - g_smoothPX) * MapRenderState::bigMapZoom + MapRenderState::bigMapOffsetX);
+                                float sy_min = std::floor(cy + (rz * 256.0f - g_smoothPZ) * MapRenderState::bigMapZoom + MapRenderState::bigMapOffsetZ);
+                                float sx_max = std::floor(cx + ((rx + 1) * 256.0f - g_smoothPX) * MapRenderState::bigMapZoom + MapRenderState::bigMapOffsetX);
+                                float sy_max = std::floor(cy + ((rz + 1) * 256.0f - g_smoothPZ) * MapRenderState::bigMapZoom + MapRenderState::bigMapOffsetZ);
+                                
+                                draw_list->AddImage((void*)g_regionSRVs[hash], ImVec2(sx_min, sy_min), ImVec2(sx_max, sy_max));
+                            }
                         }
                     }
                 }
@@ -1418,6 +1508,9 @@ namespace DX11Hook {
                 g_radarUpdated.store(false);
             }
             for (const auto& ent : s_cachedEntities) {
+                float dxSelf = ent.x - g_playerX;
+                float dzSelf = ent.z - g_playerZ;
+                if (dxSelf * dxSelf + dzSelf * dzSelf < 4.0f) continue;
                 float wx = cx + (ent.x - g_smoothPX) * MapRenderState::bigMapZoom + MapRenderState::bigMapOffsetX;
                 float wz = cy + (ent.z - g_smoothPZ) * MapRenderState::bigMapZoom + MapRenderState::bigMapOffsetZ;
                 if (wx < -50.0f || wx > io.DisplaySize.x + 50.0f || wz < -50.0f || wz > io.DisplaySize.y + 50.0f) continue;
@@ -1515,7 +1608,7 @@ namespace DX11Hook {
             ImGui::OpenPopup("SettingsPopup");
         }
         
-        ImGui::SetNextWindowSize(ImVec2(220, 200));
+        ImGui::SetNextWindowSize(ImVec2(220, 250));
         if (ImGui::BeginPopup("SettingsPopup")) {
             ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), LanguageManager::GetText("SIDEBAR_OPS"));
             ImGui::Separator();
@@ -1524,6 +1617,9 @@ namespace DX11Hook {
                 LanguageManager::SaveConfig();
             }
             if (ImGui::Checkbox(LanguageManager::GetText("SQUARE_MINIMAP"), &MapRenderState::isSquareMap)) {
+                LanguageManager::SaveConfig();
+            }
+            if (ImGui::Checkbox(LanguageManager::GetText("ROTATE_MAP"), &MapRenderState::bigMapRotateWithPlayer)) {
                 LanguageManager::SaveConfig();
             }
             ImGui::Spacing();

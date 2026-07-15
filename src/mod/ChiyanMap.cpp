@@ -8,6 +8,7 @@
 #include <chrono>
 #include <atomic>
 #include <vector>
+#include <string>
 
 float g_playerX       = 0.0f;
 float g_playerY       = 0.0f;
@@ -18,6 +19,7 @@ bool  g_hasPlayer     = false;
 class LocalPlayer;
 class ClientInstance;
 
+std::string g_localPlayerUuid;
 LocalPlayer* g_localPlayer    = nullptr;
 ClientInstance* g_clientInstance = nullptr;
 
