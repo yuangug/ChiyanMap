@@ -739,6 +739,11 @@ LL_TYPE_INSTANCE_HOOK(
                 }
             }
             
+            // 洞穴模式下每次扫描都更新基准高度
+            if (MapRenderState::caveMode) {
+                MapRenderState::caveScanY = (int)g_playerY;
+            }
+            
             isScanning = true;
             currentRow = -MAP_DATA_RADIUS;
             currentCol = -MAP_DATA_RADIUS;
