@@ -619,16 +619,17 @@ LL_TYPE_INSTANCE_HOOK(
                 std::memset(g_mapColorsBack, 0, sizeof(g_mapColorsBack));
                 std::memset(g_mapWaterFlagsBack, 0, sizeof(g_mapWaterFlagsBack));
                 
-                // 下界自动洞穴模式，跳过地表缓存预加载
+                // 下界自动洞穴模式
                 if (dimId == 1) {
                     MapRenderState::caveMode = true;
                     MapRenderState::caveScanY = (int)g_playerY;
                 } else {
                     MapRenderState::caveMode = false;
-                    MapCacheManager::PreloadScanBuffer(g_playerBlockX, g_playerBlockZ, g_mapColors, g_mapHeights);
-                    g_lastRenderX = g_playerBlockX;
-                    g_lastRenderZ = g_playerBlockZ;
                 }
+                // 所有维度都尝试从磁盘缓存预加载，避免进世界瞬间全黑
+                MapCacheManager::PreloadScanBuffer(g_playerBlockX, g_playerBlockZ, g_mapColors, g_mapHeights);
+                g_lastRenderX = g_playerBlockX;
+                g_lastRenderZ = g_playerBlockZ;
                 
                 MapRenderState::clearGPUCache.store(true); 
                 g_mapDataUpdated.store(true);
@@ -961,14 +962,25 @@ LL_TYPE_INSTANCE_HOOK(
 
                             if ((currentCol & 63) == 0) {
                                 auto now = std::chrono::high_resolution_clock::now();
-                                if (std::chrono::duration_cast<std::chrono::microseconds>(now - scanStartTime).count() > 250) {
+                                int budgetMicros = MapRenderState::caveMode ? 900 : 250;
+                                if (std::chrono::duration_cast<std::chrono::microseconds>(now - scanStartTime).count() > budgetMicros) {
                                     timeBudgetExceeded = true;
                                     break;
                                 }
                             }
                         }
 
-                        if (timeBudgetExceeded) break;
+                        if (timeBudgetExceeded) {
+                            // 进度式发布：把已扫描部分提前推到前台，避免整张扫完前地图全黑
+                            std::lock_guard<std::mutex> lock(g_mapDataMutex);
+                            std::memcpy(g_mapColors, g_mapColorsBack, sizeof(g_mapColors));
+                            std::memcpy(g_mapHeights, g_mapHeightsBack, sizeof(g_mapHeights));
+                            std::memcpy(g_mapWaterFlags, g_mapWaterFlagsBack, sizeof(g_mapWaterFlags));
+                            g_lastRenderX = currentScanX;
+                            g_lastRenderZ = currentScanZ;
+                            g_mapDataUpdated.store(true);
+                            break;
+                        }
 
                         if (currentCol > MAP_DATA_RADIUS) {
                             currentCol = -MAP_DATA_RADIUS;
