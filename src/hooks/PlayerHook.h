@@ -759,6 +759,13 @@ LL_TYPE_INSTANCE_HOOK(
             if (MapRenderState::caveMode) {
                 MapRenderState::caveScanY = (int)g_playerY;
             }
+
+            {
+                std::lock_guard<std::mutex> lock(g_mapDataMutex);
+                std::memcpy(g_mapColorsBack, g_mapColors, sizeof(g_mapColors));
+                std::memcpy(g_mapHeightsBack, g_mapHeights, sizeof(g_mapHeights));
+                std::memcpy(g_mapWaterFlagsBack, g_mapWaterFlags, sizeof(g_mapWaterFlags));
+            }
             
             isScanning = true;
             currentRow = -MAP_DATA_RADIUS;
