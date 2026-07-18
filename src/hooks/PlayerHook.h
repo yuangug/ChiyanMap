@@ -763,7 +763,11 @@ LL_TYPE_INSTANCE_HOOK(
 
             {
                 std::lock_guard<std::mutex> lock(g_mapDataMutex);
-                std::memcpy(g_mapColorsBack, g_mapColors, sizeof(g_mapColors));
+                // 用当前位置磁盘缓存作为后台种子，避免残留上一次整图（旧位置）数据导致地图错位
+                std::memset(g_mapColorsBack, 0, sizeof(g_mapColorsBack));
+                std::memset(g_mapHeightsBack, 0, sizeof(g_mapHeightsBack));
+                std::memset(g_mapWaterFlagsBack, 0, sizeof(g_mapWaterFlagsBack));
+                MapCacheManager::PreloadScanBuffer(currentScanX, currentScanZ, g_mapColorsBack, g_mapHeightsBack);
                 std::memcpy(g_mapHeightsBack, g_mapHeights, sizeof(g_mapHeights));
                 std::memcpy(g_mapWaterFlagsBack, g_mapWaterFlags, sizeof(g_mapWaterFlags));
             }
@@ -962,7 +966,7 @@ LL_TYPE_INSTANCE_HOOK(
 
                             if ((currentCol & 63) == 0) {
                                 auto now = std::chrono::high_resolution_clock::now();
-                                int budgetMicros = MapRenderState::caveMode ? 900 : 250;
+                                int budgetMicros = MapRenderState::caveMode ? 1500 : 1500;
                                 if (std::chrono::duration_cast<std::chrono::microseconds>(now - scanStartTime).count() > budgetMicros) {
                                     timeBudgetExceeded = true;
                                     break;
@@ -976,6 +980,8 @@ LL_TYPE_INSTANCE_HOOK(
                             std::memcpy(g_mapColors, g_mapColorsBack, sizeof(g_mapColors));
                             std::memcpy(g_mapHeights, g_mapHeightsBack, sizeof(g_mapHeights));
                             std::memcpy(g_mapWaterFlags, g_mapWaterFlagsBack, sizeof(g_mapWaterFlags));
+                            g_lastRenderX = currentScanX;
+                            g_lastRenderZ = currentScanZ;
                             g_mapDataUpdated.store(true);
                             break;
                         }
