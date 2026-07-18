@@ -614,8 +614,10 @@ LL_TYPE_INSTANCE_HOOK(
                 
                 std::memset(g_mapHeights, 0, sizeof(g_mapHeights));
                 std::memset(g_mapColors, 0, sizeof(g_mapColors));
+                std::memset(g_mapWaterFlags, 0, sizeof(g_mapWaterFlags));
                 std::memset(g_mapHeightsBack, 0, sizeof(g_mapHeightsBack));
                 std::memset(g_mapColorsBack, 0, sizeof(g_mapColorsBack));
+                std::memset(g_mapWaterFlagsBack, 0, sizeof(g_mapWaterFlagsBack));
                 
                 // 下界自动洞穴模式，跳过地表缓存预加载
                 if (dimId == 1) {
@@ -741,6 +743,10 @@ LL_TYPE_INSTANCE_HOOK(
             if (MapRenderState::caveMode != prevCave) {
                 std::memset(g_mapColors, 0, sizeof(g_mapColors));
                 std::memset(g_mapHeights, 0, sizeof(g_mapHeights));
+                std::memset(g_mapWaterFlags, 0, sizeof(g_mapWaterFlags));
+                std::memset(g_mapColorsBack, 0, sizeof(g_mapColorsBack));
+                std::memset(g_mapHeightsBack, 0, sizeof(g_mapHeightsBack));
+                std::memset(g_mapWaterFlagsBack, 0, sizeof(g_mapWaterFlagsBack));
                 g_mapDataUpdated.store(true);
                 if (MapRenderState::caveMode) {
                     MapRenderState::caveScanY = (int)g_playerY;
@@ -805,6 +811,7 @@ LL_TYPE_INSTANCE_HOOK(
                                 int csy = MapRenderState::caveScanY;
                                 mce::Color caveColor(0, 0, 0, 1);
                                 int floorY = csy;
+                                bool isWaterCell = false;
 
                                 try {
                                     // 从 csy 向上扫描到第一个固体方块（天花板），途中发现空气即为通道
@@ -863,10 +870,12 @@ LL_TYPE_INSTANCE_HOOK(
                                 }
                                 g_mapColorsBack[arrX][arrZ] = caveColor;
                                 g_mapHeightsBack[arrX][arrZ] = (float)floorY;
+                                g_mapWaterFlagsBack[arrX][arrZ] = isWaterCell;
                             } else {
                                 // === 地表模式：现有扫描逻辑 ===
                                 short topY = region.getAboveTopSolidBlock(targetX, targetZ, true, true);
                                 g_mapHeightsBack[arrX][arrZ] = (float)topY;
+                                bool isWaterCell = false;
 
                                 if (topY > -64) {
                                     Block const& block = region.getBlock(BlockPos(targetX, topY - 1, targetZ));
@@ -927,6 +936,7 @@ LL_TYPE_INSTANCE_HOOK(
 
                                     // 水面列：扫描海床 Y，用于深度阴影
                                     if (blockName.find("water") != std::string::npos) {
+                                        isWaterCell = true;
                                         int seaFloor = (int)topY - 1;
                                         int surfaceY = seaFloor + 1;
                                         while (seaFloor > -64 && (surfaceY - seaFloor) < 64) {
@@ -941,6 +951,7 @@ LL_TYPE_INSTANCE_HOOK(
                                 } else {
                                     g_mapColorsBack[arrX][arrZ] = mce::Color(0.0f, 0.0f, 0.0f, 0.0f);
                                 }
+                                g_mapWaterFlagsBack[arrX][arrZ] = isWaterCell;
                             }
 
                             currentCol++;
@@ -968,6 +979,7 @@ LL_TYPE_INSTANCE_HOOK(
                             std::lock_guard<std::mutex> lock(g_mapDataMutex);
                             std::memcpy(g_mapHeights, g_mapHeightsBack, sizeof(g_mapHeights));
                             std::memcpy(g_mapColors, g_mapColorsBack, sizeof(g_mapColors));
+                            std::memcpy(g_mapWaterFlags, g_mapWaterFlagsBack, sizeof(g_mapWaterFlags));
                             g_lastRenderX = currentScanX;
                             g_lastRenderZ = currentScanZ;
                             g_mapDataUpdated.store(true);
@@ -976,18 +988,22 @@ LL_TYPE_INSTANCE_HOOK(
                         {
                             using ColorGrid = mce::Color[MAP_DATA_SIZE][MAP_DATA_SIZE];
                             using HeightGrid = float[MAP_DATA_SIZE][MAP_DATA_SIZE];
+                            using WaterGrid = bool[MAP_DATA_SIZE][MAP_DATA_SIZE];
                             auto asyncColors = new ColorGrid;
                             auto asyncHeights = new HeightGrid;
+                            auto asyncWaterFlags = new WaterGrid;
                             std::memcpy(asyncColors, g_mapColorsBack, sizeof(g_mapColorsBack));
                             std::memcpy(asyncHeights, g_mapHeightsBack, sizeof(g_mapHeightsBack));
+                            std::memcpy(asyncWaterFlags, g_mapWaterFlagsBack, sizeof(g_mapWaterFlagsBack));
                             int asyncX = currentScanX;
                             int asyncZ = currentScanZ;
                             bool cave = MapRenderState::caveMode;
 
-                            std::thread([asyncX, asyncZ, asyncColors, asyncHeights, cave]() {
-                                MapCacheManager::UpdateFromScan(asyncX, asyncZ, asyncColors, asyncHeights, cave);
+                            std::thread([asyncX, asyncZ, asyncColors, asyncHeights, asyncWaterFlags, cave]() {
+                                MapCacheManager::UpdateFromScan(asyncX, asyncZ, asyncColors, asyncHeights, asyncWaterFlags, cave);
                                 delete[] asyncColors;
                                 delete[] asyncHeights;
+                                delete[] asyncWaterFlags;
                             }).detach();
                         }
                     }

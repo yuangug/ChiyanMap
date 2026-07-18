@@ -86,10 +86,12 @@ inline std::atomic<bool> g_mapDataUpdated{true};
 // 前台缓冲（仅供显卡渲染读取，绝不闪烁）
 extern mce::Color g_mapColors[MAP_DATA_SIZE][MAP_DATA_SIZE];
 extern float g_mapHeights[MAP_DATA_SIZE][MAP_DATA_SIZE];
+inline bool g_mapWaterFlags[MAP_DATA_SIZE][MAP_DATA_SIZE] = {};
 
 // 后台缓冲（供 CPU 高速扫描写入）
 inline mce::Color g_mapColorsBack[MAP_DATA_SIZE][MAP_DATA_SIZE];
 inline float g_mapHeightsBack[MAP_DATA_SIZE][MAP_DATA_SIZE];
+inline bool g_mapWaterFlagsBack[MAP_DATA_SIZE][MAP_DATA_SIZE] = {};
 
 // 记录最后一次生成贴图时的绝对中心坐标
 inline int g_lastRenderX = 0;

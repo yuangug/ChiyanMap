@@ -113,7 +113,14 @@ namespace MapCacheManager {
         g_loadQueue.clear();
     }
 
-    void UpdateFromScan(int centerX, int centerZ, mce::Color scanColors[MAP_DATA_SIZE][MAP_DATA_SIZE], float scanHeights[MAP_DATA_SIZE][MAP_DATA_SIZE], bool caveMode) {
+    void UpdateFromScan(
+        int centerX,
+        int centerZ,
+        mce::Color scanColors[MAP_DATA_SIZE][MAP_DATA_SIZE],
+        float scanHeights[MAP_DATA_SIZE][MAP_DATA_SIZE],
+        bool scanWaterFlags[MAP_DATA_SIZE][MAP_DATA_SIZE],
+        bool caveMode
+    ) {
         std::lock_guard<std::mutex> lock(g_cacheMutex);
         if (g_cacheDir.empty()) return; // 未进世界前禁止写入
         int startX = centerX - MAP_DATA_RADIUS; int startZ = centerZ - MAP_DATA_RADIUS;
@@ -142,6 +149,7 @@ namespace MapCacheManager {
 
                 float currentY = scanHeights[x][z];
                 int index = (localZ * REGION_SIZE + localX) * 4;
+                bool isWater = scanWaterFlags[x][z];
 
                 float northY = currentY;
                 if (z > 0 && scanColors[x][z - 1].a > 0.01f) {
@@ -156,6 +164,9 @@ namespace MapCacheManager {
                 }
 
                 float diff = (currentY - northY) * 0.15f + (currentY - westY) * 0.15f;
+                if (isWater) {
+                    diff = -diff;
+                }
                 float shade = std::clamp(1.0f + diff, 0.65f, 1.25f);
 
                 region->colors[index + 0] = (uint8_t)(std::clamp(c.r * shade, 0.0f, 1.0f) * 255.0f);

@@ -822,11 +822,13 @@ namespace DX11Hook {
             std::thread([]() {
                 static mce::Color localColors[MAP_DATA_SIZE][MAP_DATA_SIZE];
                 static float localHeights[MAP_DATA_SIZE][MAP_DATA_SIZE];
+                static bool localWaterFlags[MAP_DATA_SIZE][MAP_DATA_SIZE];
                 float centerX, centerZ;
                 {
                     std::lock_guard<std::mutex> lock(g_mapDataMutex);
                     std::memcpy(localColors, g_mapColors, sizeof(localColors));
                     std::memcpy(localHeights, g_mapHeights, sizeof(localHeights));
+                    std::memcpy(localWaterFlags, g_mapWaterFlags, sizeof(localWaterFlags));
                     centerX = g_lastRenderX;
                     centerZ = g_lastRenderZ;
                 }
@@ -843,7 +845,11 @@ namespace DX11Hook {
                             if (z > 0 && localColors[x][z - 1].a > 0.01f && std::abs(currentY - localHeights[x][z - 1]) < 64.0f) northY = localHeights[x][z - 1];
                             if (x > 0 && localColors[x - 1][z].a > 0.01f && std::abs(currentY - localHeights[x - 1][z]) < 64.0f) westY = localHeights[x - 1][z];
 
-                            float shade = std::clamp(1.0f + (currentY - northY) * 0.15f + (currentY - westY) * 0.15f, 0.65f, 1.25f);
+                            float diff = (currentY - northY) * 0.15f + (currentY - westY) * 0.15f;
+                            if (localWaterFlags[x][z]) {
+                                diff = -diff;
+                            }
+                            float shade = std::clamp(1.0f + diff, 0.65f, 1.25f);
                             bakedData[index]     = (uint8_t)(std::clamp(col.r * shade, 0.0f, 1.0f) * 255.0f);
                             bakedData[index + 1] = (uint8_t)(std::clamp(col.g * shade, 0.0f, 1.0f) * 255.0f);
                             bakedData[index + 2] = (uint8_t)(std::clamp(col.b * shade, 0.0f, 1.0f) * 255.0f);
