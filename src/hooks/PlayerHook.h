@@ -741,13 +741,9 @@ LL_TYPE_INSTANCE_HOOK(
                 MapRenderState::caveMode = detectedCave;
             }
             if (MapRenderState::caveMode != prevCave) {
-                std::memset(g_mapColors, 0, sizeof(g_mapColors));
-                std::memset(g_mapHeights, 0, sizeof(g_mapHeights));
-                std::memset(g_mapWaterFlags, 0, sizeof(g_mapWaterFlags));
                 std::memset(g_mapColorsBack, 0, sizeof(g_mapColorsBack));
                 std::memset(g_mapHeightsBack, 0, sizeof(g_mapHeightsBack));
                 std::memset(g_mapWaterFlagsBack, 0, sizeof(g_mapWaterFlagsBack));
-                g_mapDataUpdated.store(true);
                 if (MapRenderState::caveMode) {
                     MapRenderState::caveScanY = (int)g_playerY;
                 } else {
