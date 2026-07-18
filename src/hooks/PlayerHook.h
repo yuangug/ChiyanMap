@@ -763,13 +763,11 @@ LL_TYPE_INSTANCE_HOOK(
 
             {
                 std::lock_guard<std::mutex> lock(g_mapDataMutex);
-                // 用当前位置磁盘缓存作为后台种子，避免残留上一次整图（旧位置）数据导致地图错位
+                // 用当前位置磁盘缓存作为后台种子；无缓存区域保持黑（透明），不残留旧位置数据
                 std::memset(g_mapColorsBack, 0, sizeof(g_mapColorsBack));
                 std::memset(g_mapHeightsBack, 0, sizeof(g_mapHeightsBack));
                 std::memset(g_mapWaterFlagsBack, 0, sizeof(g_mapWaterFlagsBack));
                 MapCacheManager::PreloadScanBuffer(currentScanX, currentScanZ, g_mapColorsBack, g_mapHeightsBack);
-                std::memcpy(g_mapHeightsBack, g_mapHeights, sizeof(g_mapHeights));
-                std::memcpy(g_mapWaterFlagsBack, g_mapWaterFlags, sizeof(g_mapWaterFlags));
             }
             
             isScanning = true;
