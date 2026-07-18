@@ -976,8 +976,6 @@ LL_TYPE_INSTANCE_HOOK(
                             std::memcpy(g_mapColors, g_mapColorsBack, sizeof(g_mapColors));
                             std::memcpy(g_mapHeights, g_mapHeightsBack, sizeof(g_mapHeights));
                             std::memcpy(g_mapWaterFlags, g_mapWaterFlagsBack, sizeof(g_mapWaterFlags));
-                            g_lastRenderX = currentScanX;
-                            g_lastRenderZ = currentScanZ;
                             g_mapDataUpdated.store(true);
                             break;
                         }
