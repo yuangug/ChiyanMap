@@ -193,7 +193,7 @@ namespace MapCacheManager {
         if (it != g_loadedRegions.end() && it->second) it->second->textureDirty = true;
     }
 
-    void PreloadScanBuffer(int centerX, int centerZ, mce::Color colors[MAP_DATA_SIZE][MAP_DATA_SIZE], float heights[MAP_DATA_SIZE][MAP_DATA_SIZE]) {
+    void PreloadScanBuffer(int centerX, int centerZ, mce::Color colors[MAP_DATA_SIZE][MAP_DATA_SIZE], float heights[MAP_DATA_SIZE][MAP_DATA_SIZE], bool forceReload) {
         std::lock_guard<std::mutex> lock(g_cacheMutex);
         if (g_cacheDir.empty()) return;
 
@@ -214,6 +214,14 @@ namespace MapCacheManager {
         for (int rz = minRZ; rz <= maxRZ; rz++) {
             for (int rx = minRX; rx <= maxRX; rx++) {
                 uint64_t hash = GetRegionHash(rx, rz);
+
+                if (forceReload) {
+                    auto it = g_loadedRegions.find(hash);
+                    if (it != g_loadedRegions.end() && it->second) {
+                        delete it->second;
+                        it->second = nullptr;
+                    }
+                }
 
                 if (g_loadedRegions.find(hash) == g_loadedRegions.end() || g_loadedRegions[hash] == nullptr) {
                     auto* region = new RegionData();

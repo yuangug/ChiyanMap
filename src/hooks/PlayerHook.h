@@ -607,6 +607,7 @@ LL_TYPE_INSTANCE_HOOK(
             if (MapRenderState::currentWorldId != finalWorldId || MapRenderState::currentDimensionId != dimId) {
                 MapRenderState::currentWorldId = finalWorldId;
                 MapRenderState::currentDimensionId = dimId;
+                MapRenderState::worldSwitchTime = std::chrono::steady_clock::now();
                 
                 MapCacheManager::SwitchWorld(finalWorldId, dimId);
                 WaypointManager::SwitchWorld(finalWorldId, dimId); 
@@ -728,7 +729,14 @@ LL_TYPE_INSTANCE_HOOK(
                 MapRenderState::caveMode = true;
             } else {
                 auto* rp = this->getRegion();
-                MapRenderState::caveMode = rp ? IsPlayerUnderground(rp, px, (int)g_playerY, pz) : false;
+                bool detectedCave = rp ? IsPlayerUnderground(rp, px, (int)g_playerY, pz) : false;
+                auto sinceWorldSwitch = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::steady_clock::now() - MapRenderState::worldSwitchTime
+                ).count();
+                if (sinceWorldSwitch < 6) {
+                    detectedCave = false;
+                }
+                MapRenderState::caveMode = detectedCave;
             }
             if (MapRenderState::caveMode != prevCave) {
                 std::memset(g_mapColors, 0, sizeof(g_mapColors));
@@ -736,6 +744,12 @@ LL_TYPE_INSTANCE_HOOK(
                 g_mapDataUpdated.store(true);
                 if (MapRenderState::caveMode) {
                     MapRenderState::caveScanY = (int)g_playerY;
+                } else {
+                    // 回到地表时先把磁盘里的旧地表缓存恢复出来，再继续扫描，减少空白期
+                    MapCacheManager::PreloadScanBuffer(currentScanX, currentScanZ, g_mapColors, g_mapHeights, true);
+                    g_lastRenderX = currentScanX;
+                    g_lastRenderZ = currentScanZ;
+                    g_mapDataUpdated.store(true);
                 }
             }
             

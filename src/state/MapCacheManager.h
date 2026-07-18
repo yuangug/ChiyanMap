@@ -40,5 +40,5 @@ namespace MapCacheManager {
     void SwitchWorld(const std::string& worldId, int dimensionId);
     
     // 从缓存预加载扫描缓冲区（进世界时调用，让小地图立即显示已有数据）
-    void PreloadScanBuffer(int centerX, int centerZ, mce::Color colors[MAP_DATA_SIZE][MAP_DATA_SIZE], float heights[MAP_DATA_SIZE][MAP_DATA_SIZE]);
+    void PreloadScanBuffer(int centerX, int centerZ, mce::Color colors[MAP_DATA_SIZE][MAP_DATA_SIZE], float heights[MAP_DATA_SIZE][MAP_DATA_SIZE], bool forceReload = false);
 }
