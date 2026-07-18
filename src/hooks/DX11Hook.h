@@ -846,9 +846,6 @@ namespace DX11Hook {
                             if (x > 0 && localColors[x - 1][z].a > 0.01f && std::abs(currentY - localHeights[x - 1][z]) < 64.0f) westY = localHeights[x - 1][z];
 
                             float diff = (currentY - northY) * 0.15f + (currentY - westY) * 0.15f;
-                            if (localWaterFlags[x][z]) {
-                                diff = -diff;
-                            }
                             float shade = std::clamp(1.0f + diff, 0.65f, 1.25f);
                             bakedData[index]     = (uint8_t)(std::clamp(col.r * shade, 0.0f, 1.0f) * 255.0f);
                             bakedData[index + 1] = (uint8_t)(std::clamp(col.g * shade, 0.0f, 1.0f) * 255.0f);

@@ -164,9 +164,6 @@ namespace MapCacheManager {
                 }
 
                 float diff = (currentY - northY) * 0.15f + (currentY - westY) * 0.15f;
-                if (isWater) {
-                    diff = -diff;
-                }
                 float shade = std::clamp(1.0f + diff, 0.65f, 1.25f);
 
                 region->colors[index + 0] = (uint8_t)(std::clamp(c.r * shade, 0.0f, 1.0f) * 255.0f);
