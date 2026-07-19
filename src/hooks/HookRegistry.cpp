@@ -20,10 +20,16 @@ extern "C" __declspec(dllexport) LRESULT ChiyanMap_WndProcFromBRD(
     return DX11Hook::HandleWndProcFromBRD(hWnd, uMsg, wParam, lParam);
 }
 
+extern "C" __declspec(dllexport) bool ChiyanMap_IsUIActive() {
+    return MapRenderState::IsUIActive();
+}
+
 void registerAllHooks() {
     DX11Hook::init();
     // 只注册原生的游戏逻辑与 UI 钩子
-    ClientInstanceUpdateHook::hook();
+    if (!RegisterBRDClientInstanceUpdateCallback()) {
+        ClientInstanceUpdateHook::hook();
+    }
     UIRenderContextFlushTextHook::hook();
 
     LocalPlayerApplyTurnDeltaHook::hook();
@@ -48,7 +54,11 @@ void registerAllHooks() {
 }
 
 void unregisterAllHooks() {
-    ClientInstanceUpdateHook::unhook();
+    if (g_registeredBRDClientInstanceCallback) {
+        UnregisterBRDClientInstanceUpdateCallback();
+    } else {
+        ClientInstanceUpdateHook::unhook();
+    }
     UIRenderContextFlushTextHook::unhook();
 
     LocalPlayerApplyTurnDeltaHook::unhook();

@@ -40,18 +40,52 @@
 #include "state/MapCacheManager.h"
 #include "state/LanguageManager.h"
 
-using BRD_OnClientInstanceUpdate_t = void(*)(void* clientInstance, unsigned char isInitFinished);
-inline BRD_OnClientInstanceUpdate_t g_brdOnClientInstanceUpdate = nullptr;
+using BRD_RegisterClientInstanceUpdateCallback_t = void(*)(void(__stdcall*)(void*, unsigned char));
+using BRD_UnregisterClientInstanceUpdateCallback_t = void(*)(void(__stdcall*)(void*, unsigned char));
+using BRD_GetClientInstance_t = void*(*)();
 
-inline void NotifyBRDClientInstanceUpdate(void* clientInstance, unsigned char isInitFinished) {
-    if (!g_brdOnClientInstanceUpdate) {
-        if (HMODULE brd = GetModuleHandleA("BetterRenderDragon.dll")) {
-            g_brdOnClientInstanceUpdate = reinterpret_cast<BRD_OnClientInstanceUpdate_t>(GetProcAddress(brd, "BRD_OnClientInstanceUpdate"));
+inline BRD_RegisterClientInstanceUpdateCallback_t g_brdRegisterClientInstanceUpdateCallback = nullptr;
+inline BRD_UnregisterClientInstanceUpdateCallback_t g_brdUnregisterClientInstanceUpdateCallback = nullptr;
+inline BRD_GetClientInstance_t g_brdGetClientInstance = nullptr;
+inline bool g_registeredBRDClientInstanceCallback = false;
+
+inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isInitFinished);
+inline void __stdcall OnBRDClientInstanceUpdate(void* clientInstance, unsigned char isInitFinished) {
+    HandleClientInstanceUpdate(static_cast<ClientInstance*>(clientInstance), isInitFinished != 0);
+}
+
+inline bool ResolveBRDClientInstanceApi() {
+    HMODULE brd = GetModuleHandleA("BetterRenderDragon.dll");
+    if (!brd) return false;
+    g_brdRegisterClientInstanceUpdateCallback = reinterpret_cast<BRD_RegisterClientInstanceUpdateCallback_t>(
+        GetProcAddress(brd, "BRD_RegisterClientInstanceUpdateCallback")
+    );
+    g_brdUnregisterClientInstanceUpdateCallback = reinterpret_cast<BRD_UnregisterClientInstanceUpdateCallback_t>(
+        GetProcAddress(brd, "BRD_UnregisterClientInstanceUpdateCallback")
+    );
+    g_brdGetClientInstance = reinterpret_cast<BRD_GetClientInstance_t>(GetProcAddress(brd, "BRD_GetClientInstance"));
+    return g_brdRegisterClientInstanceUpdateCallback && g_brdUnregisterClientInstanceUpdateCallback;
+}
+
+inline bool RegisterBRDClientInstanceUpdateCallback() {
+    if (g_registeredBRDClientInstanceCallback) return true;
+    if (!ResolveBRDClientInstanceApi()) return false;
+    g_brdRegisterClientInstanceUpdateCallback(OnBRDClientInstanceUpdate);
+    g_registeredBRDClientInstanceCallback = true;
+    if (g_brdGetClientInstance) {
+        if (void* clientInstance = g_brdGetClientInstance()) {
+            OnBRDClientInstanceUpdate(clientInstance, 1);
         }
     }
-    if (g_brdOnClientInstanceUpdate) {
-        g_brdOnClientInstanceUpdate(clientInstance, isInitFinished);
+    return true;
+}
+
+inline void UnregisterBRDClientInstanceUpdateCallback() {
+    if (!g_registeredBRDClientInstanceCallback) return;
+    if (g_brdUnregisterClientInstanceUpdateCallback) {
+        g_brdUnregisterClientInstanceUpdateCallback(OnBRDClientInstanceUpdate);
     }
+    g_registeredBRDClientInstanceCallback = false;
 }
 
 // 提取玩家皮肤 8x8 头部正面像素
@@ -469,24 +503,16 @@ inline bool IsPlayerUnderground(BlockSource* region, int px, int py, int pz) {
     return hits >= 3;
 }
 
-LL_TYPE_INSTANCE_HOOK(
-    ClientInstanceUpdateHook,
-    ll::memory::HookPriority::Normal,
-    ClientInstance,
-    &ClientInstance::$update,
-    bool,
-    bool a1
-) {
+inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isInitFinished) {
+    if (!clientInstance) return;
     MapRenderState::lastFrameTotalCalls = MapRenderState::frameCallCount.load();
     if (MapRenderState::lastFrameTotalCalls < 1) MapRenderState::lastFrameTotalCalls = 1;
     MapRenderState::frameCallCount.store(0);
 
-    bool result = origin(a1);
-    NotifyBRDClientInstanceUpdate(this, static_cast<unsigned char>(a1));
-    g_clientInstance = this;
+    g_clientInstance = clientInstance;
 
-    auto* player = this->getLocalPlayer();
-        if (player && this->isWorldActive()) {
+    auto* player = clientInstance->getLocalPlayer();
+        if (player && clientInstance->isWorldActive()) {
             const Vec3 pos = player->getFeetPos();
 
             if (g_prevPhysicsPos.x == 0.0f && g_prevPhysicsPos.z == 0.0f) {
@@ -516,7 +542,7 @@ LL_TYPE_INSTANCE_HOOK(
             bool needsSafeFall = false;
 
             if (targetY < -500.0f) {
-                BlockSource* region = this->getRegion();
+                BlockSource* region = clientInstance->getRegion();
                 if (region) {
                     short topY = region->getAboveTopSolidBlock((int)targetX, (int)targetZ, true, true);
                     if (topY > -60 && topY < 319) {
@@ -656,7 +682,7 @@ LL_TYPE_INSTANCE_HOOK(
         } catch(...) {}
 
         try {
-            BlockSource* regionPtr = this->getRegion();
+            BlockSource* regionPtr = clientInstance->getRegion();
             if (regionPtr) {
                 auto const& biome = regionPtr->getBiome(BlockPos(g_playerBlockX, (int)g_playerY, g_playerBlockZ));
                 {
@@ -681,18 +707,15 @@ LL_TYPE_INSTANCE_HOOK(
         bool currentUIState = MapRenderState::IsUIActive();
         if (currentUIState != lastUIState) {
             lastUIState = currentUIState;
-            HWND hwnd = FindWindowW(L"Minecraft", NULL);
+            HWND hwnd = FindWindowA("Bedrock", "Minecraft");
+            if (!hwnd) hwnd = FindWindowW(L"Minecraft", NULL);
             if (!hwnd) hwnd = GetForegroundWindow();
             
             if (currentUIState) {
-                this->releaseMouse();
+                clientInstance->releaseMouse();
                 ClipCursor(NULL);
-                if (hwnd) {
-                    RECT rect; GetWindowRect(hwnd, &rect);
-                    SetCursorPos((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2);
-                }
             } else {
-                this->grabMouse();
+                clientInstance->grabMouse();
                 if (hwnd) {
                     RECT rect; GetWindowRect(hwnd, &rect);
                     SetCursorPos((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2);
@@ -700,7 +723,12 @@ LL_TYPE_INSTANCE_HOOK(
             }
         }
 
-        HWND hwnd = FindWindowW(L"Minecraft", NULL);
+        if (currentUIState) {
+            ClipCursor(NULL);
+        }
+
+        HWND hwnd = FindWindowA("Bedrock", "Minecraft");
+        if (!hwnd) hwnd = FindWindowW(L"Minecraft", NULL);
         if (!hwnd) hwnd = GetForegroundWindow();
         
         if (hwnd && GetForegroundWindow() == hwnd) {
@@ -750,7 +778,7 @@ LL_TYPE_INSTANCE_HOOK(
             if (MapRenderState::currentDimensionId == 1) {
                 MapRenderState::caveMode = true;
             } else {
-                auto* rp = this->getRegion();
+                auto* rp = clientInstance->getRegion();
                 bool detectedCave = rp ? IsPlayerUnderground(rp, px, (int)g_playerY, pz) : false;
                 auto sinceWorldSwitch = std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::steady_clock::now() - MapRenderState::worldSwitchTime
@@ -808,7 +836,7 @@ LL_TYPE_INSTANCE_HOOK(
 
         if (isScanning) {
             try {
-                BlockSource* regionPtr = this->getRegion();
+                BlockSource* regionPtr = clientInstance->getRegion();
                 if (regionPtr) {
                     BlockSource& region = *regionPtr;
                     int rowsThisFrame = 0;
@@ -1086,6 +1114,18 @@ LL_TYPE_INSTANCE_HOOK(
         g_localPlayer = nullptr;
     }
 
+}
+
+LL_TYPE_INSTANCE_HOOK(
+    ClientInstanceUpdateHook,
+    ll::memory::HookPriority::Normal,
+    ClientInstance,
+    &ClientInstance::$update,
+    bool,
+    bool a1
+) {
+    bool result = origin(a1);
+    HandleClientInstanceUpdate(this, a1 != 0);
     return result;
 }
 

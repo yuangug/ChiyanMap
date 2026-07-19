@@ -93,6 +93,13 @@ namespace DX11Hook {
     // BetterRenderDragon 兼容：检测是否加载，决定后缓冲区资源状态转换策略
     inline bool g_brdPresent = false;
 
+    inline HWND FindMinecraftWindow() {
+        HWND hwnd = FindWindowA("Bedrock", "Minecraft");
+        if (!hwnd) hwnd = FindWindowW(L"Minecraft", NULL);
+        if (!hwnd) hwnd = GetForegroundWindow();
+        return hwnd;
+    }
+
     // ==========================================
     // 生物头像系统
     // ==========================================
@@ -585,6 +592,7 @@ namespace DX11Hook {
     typedef BOOL(WINAPI* PSETCURSORPOS_HOOK)(int, int);
     inline PSETCURSORPOS_HOOK oSetCursorPos = nullptr;
     inline BOOL WINAPI hkSetCursorPos(int X, int Y) {
+        if (MapRenderState::IsUIActive()) return TRUE;
         if (oSetCursorPos) return oSetCursorPos(X, Y);
         return FALSE;
     }
@@ -738,6 +746,7 @@ namespace DX11Hook {
 
     inline LRESULT HandleWndProcFromBRD(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         if (!g_imguiInitialized || !g_hasPlayer) return 0;
+        if (hWnd && g_hWnd != hWnd) g_hWnd = hWnd;
 
         ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam);
 
@@ -755,7 +764,33 @@ namespace DX11Hook {
 
         if (uMsg == WM_KEYDOWN && wParam == 0x4D && !isTyping) {
             MapRenderState::showBigMap = !MapRenderState::showBigMap;
+            if (MapRenderState::showBigMap) {
+                MapRenderState::bigMapOffsetX = 0.0f;
+                MapRenderState::bigMapOffsetZ = 0.0f;
+            }
+            return 1;
         }
+
+        if (MapRenderState::IsUIActive()) {
+            ClipCursor(NULL);
+            if (uMsg == WM_KEYDOWN && wParam == VK_ESCAPE) {
+                if (MapRenderState::showPositionSettings) {
+                    MapRenderState::tempMinimapOffsetX = MapRenderState::minimapOffsetX;
+                    MapRenderState::tempMinimapOffsetY = MapRenderState::minimapOffsetY;
+                    MapRenderState::showPositionSettings = false;
+                    MapRenderState::showBigMap = true;
+                } else {
+                    MapRenderState::showBigMap = false;
+                    MapRenderState::showWaypointUI = false;
+                }
+                return 1;
+            }
+            if (uMsg == WM_INPUT || uMsg == WM_INPUT_DEVICE_CHANGE) return 1;
+            if (uMsg >= WM_MOUSEFIRST && uMsg <= WM_MOUSELAST) return 1;
+            if (uMsg == WM_SETCURSOR) { SetCursor(LoadCursor(NULL, IDC_ARROW)); return TRUE; }
+            if (uMsg >= WM_KEYFIRST && uMsg <= WM_KEYLAST && uMsg != WM_CHAR && uMsg != WM_SYSCHAR && uMsg != WM_DEADCHAR && uMsg != WM_SYSDEADCHAR && wParam != VK_F11) return 1;
+        }
+
         return 0;
     }
 
@@ -1657,7 +1692,7 @@ namespace DX11Hook {
             ImGui::OpenPopup("SettingsPopup");
         }
         
-        ImGui::SetNextWindowSize(ImVec2(220, 250));
+        ImGui::SetNextWindowSize(ImVec2(300, 280));
         if (ImGui::BeginPopup("SettingsPopup")) {
             ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), LanguageManager::GetText("SIDEBAR_OPS"));
             ImGui::Separator();
@@ -1672,9 +1707,11 @@ namespace DX11Hook {
                 LanguageManager::SaveConfig();
             }
             ImGui::Spacing();
+            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
             if (ImGui::SliderFloat(LanguageManager::GetText("MINIMAP_SIZE"), &MapRenderState::minimapSize, 60.0f, 300.0f, "%.0f")) {
                 LanguageManager::SaveConfig();
             }
+            ImGui::PopItemWidth();
             ImGui::Spacing();
 
             std::string previewName = LanguageManager::g_currentLanguage;
@@ -2026,16 +2063,62 @@ namespace DX11Hook {
         ImGui::End();
     }
 
+    inline void RenderPositionSettingsPanel() {
+        if (!MapRenderState::showPositionSettings) return;
+
+        ImGuiIO& io = ImGui::GetIO();
+        float mmr = MapRenderState::minimapSize;
+        float sx = io.DisplaySize.x;
+        float sy = io.DisplaySize.y;
+        float maxX = std::max(0.0f, sx * 0.5f - mmr);
+        float maxY = std::max(0.0f, sy * 0.5f - mmr);
+        MapRenderState::tempMinimapOffsetX = std::clamp(MapRenderState::tempMinimapOffsetX, -maxX, maxX);
+        MapRenderState::tempMinimapOffsetY = std::clamp(MapRenderState::tempMinimapOffsetY, -maxY, maxY);
+
+        ImGui::SetNextWindowPos(ImVec2(sx * 0.5f, sy * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ImVec2(360, 220));
+        ImGui::SetNextWindowBgAlpha(0.75f);
+        ImGuiWindowFlags posFlags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar;
+        bool open = true;
+        if (ImGui::Begin("PositionSettings", &open, posFlags)) {
+            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), LanguageManager::GetText("POSITION_SETTINGS"));
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
+            ImGui::SliderFloat(LanguageManager::GetText("POSITION_X"), &MapRenderState::tempMinimapOffsetX, -maxX, maxX, "%.0f");
+            ImGui::SliderFloat(LanguageManager::GetText("POSITION_Y"), &MapRenderState::tempMinimapOffsetY, -maxY, maxY, "%.0f");
+            ImGui::PopItemWidth();
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            float btnW = (ImGui::GetContentRegionAvail().x - 10.0f) * 0.5f;
+            if (ImGui::Button(LanguageManager::GetText("SAVE_EXIT"), ImVec2(btnW, 35.0f))) {
+                MapRenderState::minimapOffsetX = MapRenderState::tempMinimapOffsetX;
+                MapRenderState::minimapOffsetY = MapRenderState::tempMinimapOffsetY;
+                LanguageManager::SaveConfig();
+                MapRenderState::showPositionSettings = false;
+                MapRenderState::showBigMap = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(LanguageManager::GetText("DONT_SAVE"), ImVec2(btnW, 35.0f))) {
+                MapRenderState::tempMinimapOffsetX = MapRenderState::minimapOffsetX;
+                MapRenderState::tempMinimapOffsetY = MapRenderState::minimapOffsetY;
+                MapRenderState::showPositionSettings = false;
+                MapRenderState::showBigMap = true;
+            }
+        }
+        ImGui::End();
+    }
+
     inline void RenderFrameToRTV(ID3D11RenderTargetView* rtv, bool releaseRtv) {
         auto readKey = [](int vk) -> SHORT {
             return oGetAsyncKeyState ? oGetAsyncKeyState(vk) : GetAsyncKeyState(vk);
         };
-        static bool prevM = false;
-        bool curM = (readKey('M') & 0x8000) != 0;
-        if (curM && !prevM) {
-            MapRenderState::showBigMap = !MapRenderState::showBigMap;
-        }
-        prevM = curM;
+        // M 键由 BRD 转发的 WndProc 消息处理；这里仅保留 Tab 轮询兜底。
+        // 否则 M 会在 WndProc 与轮询中各触发一次，导致切换后立即抵消。
         g_tabHeld = (readKey(VK_TAB) & 0x8000) != 0;
 
         g_pd3dDeviceContext->OMSetRenderTargets(1, &rtv, NULL);
@@ -2061,6 +2144,8 @@ namespace DX11Hook {
         if (MapRenderState::showWaypointUI) {
             RenderImGuiWaypointUI();
         }
+
+        RenderPositionSettingsPanel();
 
         ImGui::Render();
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
@@ -2093,8 +2178,7 @@ namespace DX11Hook {
         static bool initAttempted = false;
         if (!g_imguiInitialized && !initAttempted) {
             initAttempted = true;
-            g_hWnd = FindWindowW(L"Minecraft", NULL);
-            if (!g_hWnd) g_hWnd = GetForegroundWindow();
+            if (!g_hWnd) g_hWnd = FindMinecraftWindow();
             if (!g_hWnd) return;
             g_pd3dDevice = device;
             g_pd3dDeviceContext = context;
@@ -2163,7 +2247,7 @@ namespace DX11Hook {
                 DXGI_SWAP_CHAIN_DESC sd;
                 pSwapChain->GetDesc(&sd);
                 g_hWnd = sd.OutputWindow;
-                if (!g_hWnd) g_hWnd = FindWindowW(L"Minecraft", NULL);
+                if (!g_hWnd) g_hWnd = FindMinecraftWindow();
 
                 oWndProc = (WNDPROC)SetWindowLongPtr(g_hWnd, GWLP_WNDPROC, (LONG_PTR)WndProcHook);
                 ImGui::CreateContext();
@@ -2197,49 +2281,7 @@ namespace DX11Hook {
                     RenderImGuiWaypointUI();
                 }
 
-                if (MapRenderState::showPositionSettings) {
-                    ImGuiIO& io2 = ImGui::GetIO();
-                    float mmr = MapRenderState::minimapSize;
-                    float sx = io2.DisplaySize.x;
-                    float sy = io2.DisplaySize.y;
-                    float maxX = sx / 2 - mmr;
-                    float maxY = sy / 2 - mmr;
-                    MapRenderState::tempMinimapOffsetX = std::clamp(MapRenderState::tempMinimapOffsetX, -maxX, maxX);
-                    MapRenderState::tempMinimapOffsetY = std::clamp(MapRenderState::tempMinimapOffsetY, -maxY, maxY);
-
-                    ImGui::SetNextWindowPos(ImVec2(sx * 0.5f, sy * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-                    ImGui::SetNextWindowSize(ImVec2(300, 200));
-                    ImGui::SetNextWindowBgAlpha(0.75f);
-                    ImGuiWindowFlags posFlags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar;
-                    bool open = true;
-                    if (ImGui::Begin("PositionSettings", &open, posFlags)) {
-                        ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), LanguageManager::GetText("POSITION_SETTINGS"));
-                        ImGui::Separator();
-                        ImGui::Spacing();
-                        
-                        ImGui::SliderFloat(LanguageManager::GetText("POSITION_X"), &MapRenderState::tempMinimapOffsetX, -maxX, maxX, "%.0f");
-                        ImGui::SliderFloat(LanguageManager::GetText("POSITION_Y"), &MapRenderState::tempMinimapOffsetY, -maxY, maxY, "%.0f");
-                        
-                        ImGui::Spacing();
-                        ImGui::Separator();
-                        ImGui::Spacing();
-                        
-                        float btnW = (ImGui::GetContentRegionAvail().x - 10.0f) * 0.5f;
-                        if (ImGui::Button(LanguageManager::GetText("SAVE_EXIT"), ImVec2(btnW, 35.0f))) {
-                            MapRenderState::minimapOffsetX = MapRenderState::tempMinimapOffsetX;
-                            MapRenderState::minimapOffsetY = MapRenderState::tempMinimapOffsetY;
-                            LanguageManager::SaveConfig();
-                            MapRenderState::showPositionSettings = false;
-                            MapRenderState::showBigMap = true;
-                        }
-                        ImGui::SameLine();
-                        if (ImGui::Button(LanguageManager::GetText("DONT_SAVE"), ImVec2(btnW, 35.0f))) {
-                            MapRenderState::showPositionSettings = false;
-                            MapRenderState::showBigMap = true;
-                        }
-                    }
-                    ImGui::End();
-                }
+                RenderPositionSettingsPanel();
 
                 ImGui::Render();
                 ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
@@ -2310,8 +2352,7 @@ namespace DX11Hook {
     }
 
     inline bool init() {
-        HWND hwnd = FindWindowW(L"Minecraft", NULL);
-        if (!hwnd) hwnd = GetForegroundWindow();
+        HWND hwnd = FindMinecraftWindow();
         if (!hwnd) return false;
         g_brdPresent = (GetModuleHandleA("BetterRenderDragon.dll") != nullptr);
         
@@ -2332,7 +2373,6 @@ namespace DX11Hook {
         if (g_brdPresent) {
             if (status == MH_OK || status == MH_ERROR_ALREADY_INITIALIZED) {
                 g_hWnd = hwnd;
-                oWndProc = (WNDPROC)SetWindowLongPtr(g_hWnd, GWLP_WNDPROC, (LONG_PTR)WndProcHook);
                 HMODULE hUser32 = GetModuleHandleW(L"user32.dll");
                 if (hUser32) {
                     auto hookUser32 = [&](LPCSTR name, LPVOID detour, LPVOID* original) {
