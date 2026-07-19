@@ -40,6 +40,20 @@
 #include "state/MapCacheManager.h"
 #include "state/LanguageManager.h"
 
+using BRD_OnClientInstanceUpdate_t = void(*)(void* clientInstance, unsigned char isInitFinished);
+inline BRD_OnClientInstanceUpdate_t g_brdOnClientInstanceUpdate = nullptr;
+
+inline void NotifyBRDClientInstanceUpdate(void* clientInstance, unsigned char isInitFinished) {
+    if (!g_brdOnClientInstanceUpdate) {
+        if (HMODULE brd = GetModuleHandleA("BetterRenderDragon.dll")) {
+            g_brdOnClientInstanceUpdate = reinterpret_cast<BRD_OnClientInstanceUpdate_t>(GetProcAddress(brd, "BRD_OnClientInstanceUpdate"));
+        }
+    }
+    if (g_brdOnClientInstanceUpdate) {
+        g_brdOnClientInstanceUpdate(clientInstance, isInitFinished);
+    }
+}
+
 // 提取玩家皮肤 8x8 头部正面像素
 inline void ExtractPlayerSkinHead(class Player* player, const std::string& uuid) {
     if (uuid.empty()) return;
@@ -468,6 +482,7 @@ LL_TYPE_INSTANCE_HOOK(
     MapRenderState::frameCallCount.store(0);
 
     bool result = origin(a1);
+    NotifyBRDClientInstanceUpdate(this, static_cast<unsigned char>(a1));
     g_clientInstance = this;
 
     auto* player = this->getLocalPlayer();
