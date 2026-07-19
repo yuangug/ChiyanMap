@@ -2003,6 +2003,54 @@ namespace DX11Hook {
         ImGui::End();
     }
 
+    inline void RenderFrameToRTV(ID3D11RenderTargetView* rtv, bool releaseRtv) {
+        g_pd3dDeviceContext->OMSetRenderTargets(1, &rtv, NULL);
+        ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
+        ImGui::GetIO().MouseDrawCursor = MapRenderState::IsUIActive();
+
+        UpdateSmoothCamera();
+
+        if (MapRenderState::showBigMap) {
+            RenderImGuiBigMap();
+        } else {
+            RenderImGuiXaeroMap();
+        }
+
+        if (MapRenderState::showWaypointUI) {
+            RenderImGuiWaypointUI();
+        }
+
+        ImGui::Render();
+        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+
+        ID3D11RenderTargetView* nullRTV = nullptr;
+        g_pd3dDeviceContext->OMSetRenderTargets(1, &nullRTV, NULL);
+        if (releaseRtv) rtv->Release();
+    }
+
+    inline void RenderFromBRD(ID3D11Device* device, ID3D11DeviceContext* context, ID3D11RenderTargetView* rtv) {
+        if (!device || !context || !rtv || !g_hasPlayer) return;
+        static bool initAttempted = false;
+        if (!g_imguiInitialized && !initAttempted) {
+            initAttempted = true;
+            g_hWnd = FindWindowW(L"Minecraft", NULL);
+            if (!g_hWnd) g_hWnd = GetForegroundWindow();
+            if (!g_hWnd) return;
+            g_pd3dDevice = device;
+            g_pd3dDeviceContext = context;
+            g_pd3dDevice->AddRef();
+            g_pd3dDeviceContext->AddRef();
+            ImGui::CreateContext();
+            ImGuiIO& io = ImGui::GetIO();
+            InitImGuiFonts(io);
+            ImGui_ImplWin32_Init(g_hWnd);
+            ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
+            InitMapTexture();
+            g_imguiInitialized = true;
+        }
+        if (g_imguiInitialized) RenderFrameToRTV(rtv, false);
+    }
+
     inline void RenderImGui(IDXGISwapChain* pSwapChain) {
         static std::atomic<bool> isRendering{false};
         if (isRendering.exchange(true)) return;
@@ -2208,6 +2256,10 @@ namespace DX11Hook {
         ID3D11DeviceContext* dummyContext = nullptr;
 
         MH_STATUS status = MH_Initialize();
+
+        // BRD 共存时由 BRD 的 Present/ImGui 管线调用 ChiyanMap_RenderFromBRD，
+        // ChiyanMap 不再抢 Present/Resize/ExecuteCommandLists，避免双方图形钩子互相覆盖。
+        if (g_brdPresent) return (status == MH_OK || status == MH_ERROR_ALREADY_INITIALIZED);
 
         if (SUCCEEDED(D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, &featureLevel, 1, D3D11_SDK_VERSION, &sd, &dummySwapChain, &dummyDevice, NULL, &dummyContext))) {
             void** pVTable = *reinterpret_cast<void***>(dummySwapChain);

@@ -3,6 +3,14 @@
 #include "hooks/PlayerHook.h"
 #include "hooks/UIRenderHook.h"
 
+extern "C" __declspec(dllexport) void ChiyanMap_RenderFromBRD(
+    ID3D11Device* device,
+    ID3D11DeviceContext* context,
+    ID3D11RenderTargetView* rtv
+) {
+    DX11Hook::RenderFromBRD(device, context, rtv);
+}
+
 void registerAllHooks() {
     DX11Hook::init();
     // 只注册原生的游戏逻辑与 UI 钩子
