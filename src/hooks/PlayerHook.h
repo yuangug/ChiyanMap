@@ -969,7 +969,7 @@ LL_TYPE_INSTANCE_HOOK(
 
                             if ((currentCol & 63) == 0) {
                                 auto now = std::chrono::high_resolution_clock::now();
-                                int budgetMicros = MapRenderState::caveMode ? 6000 : 6000;
+                                int budgetMicros = MapRenderState::caveMode ? 6000 : 2500;
                                 if (std::chrono::duration_cast<std::chrono::microseconds>(now - scanStartTime).count() > budgetMicros) {
                                     timeBudgetExceeded = true;
                                     break;
