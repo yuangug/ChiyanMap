@@ -2004,8 +2004,27 @@ namespace DX11Hook {
     }
 
     inline void RenderFrameToRTV(ID3D11RenderTargetView* rtv, bool releaseRtv) {
+        auto readKey = [](int vk) -> SHORT {
+            return oGetAsyncKeyState ? oGetAsyncKeyState(vk) : GetAsyncKeyState(vk);
+        };
+        static bool prevM = false;
+        bool curM = (readKey('M') & 0x8000) != 0;
+        if (curM && !prevM) {
+            MapRenderState::showBigMap = !MapRenderState::showBigMap;
+        }
+        prevM = curM;
+        g_tabHeld = (readKey(VK_TAB) & 0x8000) != 0;
+
         g_pd3dDeviceContext->OMSetRenderTargets(1, &rtv, NULL);
-        ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
+        ImGui_ImplDX11_NewFrame();
+        ImGui_ImplWin32_NewFrame();
+        if (g_hWnd) {
+            RECT rc{};
+            if (GetClientRect(g_hWnd, &rc)) {
+                ImGui::GetIO().DisplaySize = ImVec2((float)(rc.right - rc.left), (float)(rc.bottom - rc.top));
+            }
+        }
+        ImGui::NewFrame();
         ImGui::GetIO().MouseDrawCursor = MapRenderState::IsUIActive();
 
         UpdateSmoothCamera();
