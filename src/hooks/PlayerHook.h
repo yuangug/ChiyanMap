@@ -284,7 +284,7 @@ inline mce::Color getBlockColor(std::string const& name, mce::Color grassCol, mc
         return mce::Color(0.90f, 0.45f, 0.05f, 1.0f);
     }
 
-    if (name.find("red_sand") != std::string::npos) return mce::Color(0.75f, 0.40f, 0.15f, 1.0f);
+    if (name.find("red_sand") != std::string::npos) return mce::Color(0.85f, 0.43f, 0.30f, 1.0f);
 
     if (name.find("end_stone") != std::string::npos) return mce::Color(0.86f, 0.89f, 0.65f, 1.0f);
     if (name.find("sandstone") != std::string::npos) return mce::Color(0.85f, 0.80f, 0.60f, 1.0f);
