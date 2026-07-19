@@ -51,8 +51,8 @@ namespace MapRenderState {
     inline int caveRange = 3;     // 玩家 Y 上下检查范围
     inline std::chrono::steady_clock::time_point worldSwitchTime = std::chrono::steady_clock::now();
     inline float minimapSize = 135.0f; // 小地图半径(像素)
-    inline float minimapOffsetX = 0.0f; // 小地图X偏移
-    inline float minimapOffsetY = 0.0f; // 小地图Y偏移
+    inline float minimapOffsetX = 1e9f;  // 小地图X偏移（默认右上角：饱和到右侧边界，0 值仍为屏幕中心）
+    inline float minimapOffsetY = -1e9f; // 小地图Y偏移（默认右上角：饱和到顶部边界，0 值仍为屏幕中心）
     inline float tempMinimapOffsetX = 0.0f; // 临时X偏移（撤销用）
     inline float tempMinimapOffsetY = 0.0f; // 临时Y偏移（撤销用）
     inline bool bigMapRotateWithPlayer = false; // 小地图跟随玩家旋转（false=上北下南, true=地图旋转指针固定）
