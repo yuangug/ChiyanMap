@@ -2195,6 +2195,7 @@ namespace DX11Hook {
         HWND hwnd = FindWindowW(L"Minecraft", NULL);
         if (!hwnd) hwnd = GetForegroundWindow();
         if (!hwnd) return false;
+        g_brdPresent = (GetModuleHandleA("BetterRenderDragon.dll") != nullptr);
         
         D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
         DXGI_SWAP_CHAIN_DESC sd = {};
@@ -2256,8 +2257,10 @@ namespace DX11Hook {
             dummySwapChain->Release(); dummyDevice->Release(); dummyContext->Release();
         }
 
+        // BRD 自己会先探测/挂钩图形后端；ChiyanMap 在 BRD 共存时不再创建 dummy D3D12 设备，
+        // 避免把 BRD 从 D3D11 路径推到 D3D12 路径，导致 BRD 的 clientInstance_Update 签名失配。
         ID3D12Device* pDummyD12Device = nullptr;
-        if (SUCCEEDED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device), (void**)&pDummyD12Device))) {
+        if (!g_brdPresent && SUCCEEDED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device), (void**)&pDummyD12Device))) {
             D3D12_COMMAND_QUEUE_DESC queueDesc = {};
             queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
             ID3D12CommandQueue* pDummyQueue = nullptr;
