@@ -237,6 +237,8 @@ inline mce::Color getBlockColor(std::string const& name, mce::Color grassCol, mc
     if (name.find("daisy") != std::string::npos || name.find("bluet") != std::string::npos || name.find("valley") != std::string::npos || name.find("white_tulip") != std::string::npos) return mce::Color(0.95f, 0.95f, 0.95f, 1.0f);
     if (name.find("flower") != std::string::npos || name.find("bloom") != std::string::npos || name.find("blossom") != std::string::npos) return mce::Color(0.92f, 0.85f, 0.25f, 1.0f);
 
+    if (name.find("red_sand") != std::string::npos) return mce::Color(0.85f, 0.43f, 0.30f, 1.0f);
+
     if (name.find("white_") != std::string::npos) return mce::Color(0.95f, 0.95f, 0.95f, 1.0f);
     if (name.find("orange_") != std::string::npos) return mce::Color(0.85f, 0.50f, 0.20f, 1.0f);
     if (name.find("magenta_") != std::string::npos) return mce::Color(0.75f, 0.35f, 0.75f, 1.0f);
@@ -283,8 +285,6 @@ inline mce::Color getBlockColor(std::string const& name, mce::Color grassCol, mc
         if (name.find("melon") != std::string::npos) return mce::Color(0.50f, 0.65f, 0.15f, 1.0f);
         return mce::Color(0.90f, 0.45f, 0.05f, 1.0f);
     }
-
-    if (name.find("red_sand") != std::string::npos) return mce::Color(0.85f, 0.43f, 0.30f, 1.0f);
 
     if (name.find("end_stone") != std::string::npos) return mce::Color(0.86f, 0.89f, 0.65f, 1.0f);
     if (name.find("sandstone") != std::string::npos) return mce::Color(0.85f, 0.80f, 0.60f, 1.0f);
