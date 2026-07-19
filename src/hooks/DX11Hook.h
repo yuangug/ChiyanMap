@@ -2259,7 +2259,27 @@ namespace DX11Hook {
 
         // BRD 共存时由 BRD 的 Present/ImGui 管线调用 ChiyanMap_RenderFromBRD，
         // ChiyanMap 不再抢 Present/Resize/ExecuteCommandLists，避免双方图形钩子互相覆盖。
-        if (g_brdPresent) return (status == MH_OK || status == MH_ERROR_ALREADY_INITIALIZED);
+        if (g_brdPresent) {
+            if (status == MH_OK || status == MH_ERROR_ALREADY_INITIALIZED) {
+                g_hWnd = hwnd;
+                oWndProc = (WNDPROC)SetWindowLongPtr(g_hWnd, GWLP_WNDPROC, (LONG_PTR)WndProcHook);
+                HMODULE hUser32 = GetModuleHandleW(L"user32.dll");
+                if (hUser32) {
+                    auto hookUser32 = [&](LPCSTR name, LPVOID detour, LPVOID* original) {
+                        void* fn = (void*)GetProcAddress(hUser32, name);
+                        if (fn && MH_CreateHook(fn, detour, original) == MH_OK) MH_EnableHook(fn);
+                    };
+                    hookUser32("GetRawInputData", (LPVOID)hkGetRawInputData, (LPVOID*)&oGetRawInputData);
+                    hookUser32("GetRawInputBuffer", (LPVOID)hkGetRawInputBuffer, (LPVOID*)&oGetRawInputBuffer);
+                    hookUser32("GetAsyncKeyState", (LPVOID)hkGetAsyncKeyState, (LPVOID*)&oGetAsyncKeyState);
+                    hookUser32("GetKeyState", (LPVOID)hkGetKeyState, (LPVOID*)&oGetKeyState);
+                    hookUser32("GetCursorPos", (LPVOID)hkGetCursorPos, (LPVOID*)&oGetCursorPos);
+                    hookUser32("SetCursorPos", (LPVOID)hkSetCursorPos, (LPVOID*)&oSetCursorPos);
+                }
+                return true;
+            }
+            return false;
+        }
 
         if (SUCCEEDED(D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, &featureLevel, 1, D3D11_SDK_VERSION, &sd, &dummySwapChain, &dummyDevice, NULL, &dummyContext))) {
             void** pVTable = *reinterpret_cast<void***>(dummySwapChain);
