@@ -446,7 +446,7 @@ inline bool IsPlayerUnderground(BlockSource* region, int px, int py, int pz) {
         for (int y = py + 2; y <= py + 22 && y < 319; y++) {
             try {
                 auto name = region->getBlock(BlockPos(px + off[0], y, pz + off[1])).getTypeName();
-                if (name != "minecraft:air" && name != "air" && name.find("leaves") == std::string::npos && name.find("log") == std::string::npos) { hits++; break; }
+                if (name != "minecraft:air" && name != "air" && name.find("water") == std::string::npos && name.find("leaves") == std::string::npos && name.find("log") == std::string::npos) { hits++; break; }
             } catch (...) { break; }
         }
     }
