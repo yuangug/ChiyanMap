@@ -322,6 +322,8 @@ inline mce::Color getBlockColor(std::string const& name, mce::Color grassCol, mc
     if (name.find("packed_ice") != std::string::npos) return mce::Color(0.55f, 0.75f, 0.95f, 1.0f);
     if (name.find("ice") != std::string::npos || name.find("frosted") != std::string::npos) return mce::Color(0.65f, 0.85f, 0.95f, 1.0f);
     if (name.find("snow") != std::string::npos) return mce::Color(0.95f, 0.98f, 1.0f, 1.0f);
+    if (name.find("soul_soil") != std::string::npos) return mce::Color(0.28f, 0.22f, 0.16f, 1.0f); // 灵魂土（比灵魂沙略深）
+    if (name.find("soul_sand") != std::string::npos) return mce::Color(0.36f, 0.27f, 0.18f, 1.0f); // 灵魂沙（与灵魂土相近，略浅）
     if (name.find("sand") != std::string::npos) return mce::Color(0.85f, 0.80f, 0.60f, 1.0f);
 
     if (name.find("terracotta") != std::string::npos || name.find("hardened_clay") != std::string::npos) {
@@ -411,8 +413,7 @@ inline mce::Color getBlockColor(std::string const& name, mce::Color grassCol, mc
     }
 
     // 下界
-    if (name.find("soul_soil") != std::string::npos) return mce::Color(0.28f, 0.22f, 0.16f, 1.0f); // 灵魂土（比灵魂沙略深）
-    if (name.find("soul_sand") != std::string::npos) return mce::Color(0.36f, 0.27f, 0.18f, 1.0f); // 灵魂沙（与灵魂土相近，略浅）
+    // 灵魂沙/灵魂土颜色已在上方 sand 规则前单独处理
 
     // 功能方块
     if (name.find("crafting_table") != std::string::npos) return mce::Color(0.55f, 0.30f, 0.15f, 1.0f);
