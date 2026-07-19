@@ -736,6 +736,29 @@ namespace DX11Hook {
         return CallWindowProc(oWndProc, hWnd, uMsg, wParam, lParam);
     }
 
+    inline LRESULT HandleWndProcFromBRD(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+        if (!g_imguiInitialized || !g_hasPlayer) return 0;
+
+        ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam);
+
+        bool isTyping = false;
+        if (ImGui::GetCurrentContext()) {
+            isTyping = ImGui::GetIO().WantCaptureKeyboard;
+        }
+
+        if (uMsg == WM_KEYDOWN && wParam == VK_TAB) {
+            if (!isTyping || MapRenderState::IsUIActive()) g_tabHeld = true;
+        }
+        if (uMsg == WM_KEYUP && wParam == VK_TAB) {
+            g_tabHeld = false;
+        }
+
+        if (uMsg == WM_KEYDOWN && wParam == 0x4D && !isTyping) {
+            MapRenderState::showBigMap = !MapRenderState::showBigMap;
+        }
+        return 0;
+    }
+
     inline void InitImGuiFonts(ImGuiIO& io) {
         io.Fonts->Clear();
 

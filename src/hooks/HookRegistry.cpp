@@ -11,6 +11,15 @@ extern "C" __declspec(dllexport) void ChiyanMap_RenderFromBRD(
     DX11Hook::RenderFromBRD(device, context, rtv);
 }
 
+extern "C" __declspec(dllexport) LRESULT ChiyanMap_WndProcFromBRD(
+    HWND hWnd,
+    UINT uMsg,
+    WPARAM wParam,
+    LPARAM lParam
+) {
+    return DX11Hook::HandleWndProcFromBRD(hWnd, uMsg, wParam, lParam);
+}
+
 void registerAllHooks() {
     DX11Hook::init();
     // 只注册原生的游戏逻辑与 UI 钩子
