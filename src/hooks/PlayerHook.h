@@ -626,8 +626,10 @@ LL_TYPE_INSTANCE_HOOK(
                 } else {
                     MapRenderState::caveMode = false;
                 }
-                // 所有维度都尝试从磁盘缓存预加载，避免进世界瞬间全黑
-                MapCacheManager::PreloadScanBuffer(g_playerBlockX, g_playerBlockZ, g_mapColors, g_mapHeights);
+                // 地表模式才预加载地表缓存；洞穴模式留空（虚空），避免显示地表颜色
+                if (!MapRenderState::caveMode) {
+                    MapCacheManager::PreloadScanBuffer(g_playerBlockX, g_playerBlockZ, g_mapColors, g_mapHeights);
+                }
                 g_lastRenderX = g_playerBlockX;
                 g_lastRenderZ = g_playerBlockZ;
                 
@@ -763,11 +765,14 @@ LL_TYPE_INSTANCE_HOOK(
 
             {
                 std::lock_guard<std::mutex> lock(g_mapDataMutex);
-                // 用当前位置磁盘缓存作为后台种子；无缓存区域保持黑（透明），不残留旧位置数据
+                // 用当前位置磁盘缓存作为后台种子，避免残留上一次整图（旧位置）数据导致地图错位
                 std::memset(g_mapColorsBack, 0, sizeof(g_mapColorsBack));
                 std::memset(g_mapHeightsBack, 0, sizeof(g_mapHeightsBack));
                 std::memset(g_mapWaterFlagsBack, 0, sizeof(g_mapWaterFlagsBack));
-                MapCacheManager::PreloadScanBuffer(currentScanX, currentScanZ, g_mapColorsBack, g_mapHeightsBack);
+                // 洞穴模式不预加载地表缓存（种子保持虚空），否则会显示地表颜色并扫描时黑闪
+                if (!MapRenderState::caveMode) {
+                    MapCacheManager::PreloadScanBuffer(currentScanX, currentScanZ, g_mapColorsBack, g_mapHeightsBack);
+                }
             }
             
             isScanning = true;
