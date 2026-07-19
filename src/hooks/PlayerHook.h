@@ -969,24 +969,12 @@ LL_TYPE_INSTANCE_HOOK(
 
                             if ((currentCol & 63) == 0) {
                                 auto now = std::chrono::high_resolution_clock::now();
-                                int budgetMicros = MapRenderState::caveMode ? 1500 : 1500;
+                                int budgetMicros = MapRenderState::caveMode ? 6000 : 6000;
                                 if (std::chrono::duration_cast<std::chrono::microseconds>(now - scanStartTime).count() > budgetMicros) {
                                     timeBudgetExceeded = true;
                                     break;
                                 }
                             }
-                        }
-
-                        if (timeBudgetExceeded) {
-                            // 进度式发布：把已扫描部分提前推到前台，避免整张扫完前地图全黑
-                            std::lock_guard<std::mutex> lock(g_mapDataMutex);
-                            std::memcpy(g_mapColors, g_mapColorsBack, sizeof(g_mapColors));
-                            std::memcpy(g_mapHeights, g_mapHeightsBack, sizeof(g_mapHeights));
-                            std::memcpy(g_mapWaterFlags, g_mapWaterFlagsBack, sizeof(g_mapWaterFlags));
-                            g_lastRenderX = currentScanX;
-                            g_lastRenderZ = currentScanZ;
-                            g_mapDataUpdated.store(true);
-                            break;
                         }
 
                         if (currentCol > MAP_DATA_RADIUS) {
