@@ -2071,7 +2071,25 @@ namespace DX11Hook {
     }
 
     inline void RenderFromBRD(ID3D11Device* device, ID3D11DeviceContext* context, ID3D11RenderTargetView* rtv) {
-        if (!device || !context || !rtv || !g_hasPlayer) return;
+        static bool loggedEntry = false;
+        static bool loggedNoPlayer = false;
+        static bool loggedInit = false;
+        static bool loggedDraw = false;
+        if (!loggedEntry) {
+            DbgLog("RenderFromBRD entered");
+            loggedEntry = true;
+        }
+        if (!device || !context || !rtv) {
+            DbgLog("RenderFromBRD missing device/context/rtv");
+            return;
+        }
+        if (!g_hasPlayer) {
+            if (!loggedNoPlayer) {
+                DbgLog("RenderFromBRD waiting for player");
+                loggedNoPlayer = true;
+            }
+            return;
+        }
         static bool initAttempted = false;
         if (!g_imguiInitialized && !initAttempted) {
             initAttempted = true;
@@ -2089,8 +2107,18 @@ namespace DX11Hook {
             ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
             InitMapTexture();
             g_imguiInitialized = true;
+            if (!loggedInit) {
+                DbgLog("RenderFromBRD initialized ImGui");
+                loggedInit = true;
+            }
         }
-        if (g_imguiInitialized) RenderFrameToRTV(rtv, false);
+        if (g_imguiInitialized) {
+            if (!loggedDraw) {
+                DbgLog("RenderFromBRD drawing map");
+                loggedDraw = true;
+            }
+            RenderFrameToRTV(rtv, false);
+        }
     }
 
     inline void RenderImGui(IDXGISwapChain* pSwapChain) {
