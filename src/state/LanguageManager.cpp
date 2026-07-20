@@ -899,6 +899,12 @@ namespace LanguageManager {
                 MapRenderState::minimapOffsetX = j.value("minimapOffsetX", 0.0f);
                 MapRenderState::minimapOffsetY = j.value("minimapOffsetY", 0.0f);
                 MapRenderState::bigMapRotateWithPlayer = j.value("bigMapRotateWithPlayer", false);
+                MapRenderState::externalCompassEnabled = j.value("externalCompassEnabled", false);
+                MapRenderState::externalCompassDeviceName = j.value("externalCompassDeviceName", std::string("MCOMPASS"));
+                MapRenderState::externalCompassIntervalMs = j.value("externalCompassIntervalMs", 30);
+                MapRenderState::externalCompassMinDelta = j.value("externalCompassMinDelta", 0.2f);
+                if (MapRenderState::externalCompassIntervalMs == 100) MapRenderState::externalCompassIntervalMs = 30;
+                if (MapRenderState::externalCompassMinDelta == 1.0f) MapRenderState::externalCompassMinDelta = 0.2f;
             } catch (...) {
                 g_currentLanguage = "en";
             }
@@ -917,12 +923,87 @@ namespace LanguageManager {
         j["minimapOffsetX"] = MapRenderState::minimapOffsetX;
         j["minimapOffsetY"] = MapRenderState::minimapOffsetY;
         j["bigMapRotateWithPlayer"] = MapRenderState::bigMapRotateWithPlayer;
+        j["externalCompassEnabled"] = MapRenderState::externalCompassEnabled;
+        j["externalCompassDeviceName"] = MapRenderState::externalCompassDeviceName;
+        j["externalCompassIntervalMs"] = MapRenderState::externalCompassIntervalMs;
+        j["externalCompassMinDelta"] = MapRenderState::externalCompassMinDelta;
 
         std::ofstream out(filePath);
         if (out.is_open()) {
             out << j.dump(4);
             out.close();
         }
+    }
+
+    static std::string GetBuiltinExtraText(const std::string& key, const std::string& langCode) {
+        static const std::unordered_map<std::string, std::string> en = {
+            {"MCOMPASS_TITLE", "mcompass"},
+            {"MCOMPASS_ENABLE", "Enable mcompass BLE sync"},
+            {"MCOMPASS_STATUS", "BLE status: %s"},
+            {"MCOMPASS_DEVICE_NAME", "Device name"},
+            {"MCOMPASS_INTERVAL", "BLE interval ms"},
+            {"MCOMPASS_MIN_DELTA", "BLE min delta"},
+            {"MCOMPASS_APPLY", "Apply mcompass settings"},
+            {"DEATH_POINTS_TITLE", "Death Records (Press 'I' or 'Esc' to Close)##Deaths"},
+            {"DEATH_POINTS_EMPTY", "No death records yet."},
+            {"DEATH_POINTS_HINT", "Recent death records are kept per world. Teleport and compass actions require the same dimension."},
+            {"DEATH_POINT_TELEPORT", "Teleport"},
+            {"DEATH_POINT_POINT_COMPASS", "Point Compass"},
+            {"DEATH_POINT_CANCEL_COMPASS", "Cancel Compass"},
+            {"DEATH_POINT_DELETE", "Delete"},
+            {"DIM_OVERWORLD", "Overworld"},
+            {"DIM_NETHER", "Nether"},
+            {"DIM_END", "The End"},
+            {"DIM_UNKNOWN", "Unknown Dimension"}
+        };
+        static const std::unordered_map<std::string, std::string> zhCN = {
+            {"MCOMPASS_TITLE", "mcompass"},
+            {"MCOMPASS_ENABLE", "启用 mcompass BLE 同步"},
+            {"MCOMPASS_STATUS", "BLE 状态: %s"},
+            {"MCOMPASS_DEVICE_NAME", "设备名称"},
+            {"MCOMPASS_INTERVAL", "BLE 间隔 ms"},
+            {"MCOMPASS_MIN_DELTA", "BLE 最小角度差"},
+            {"MCOMPASS_APPLY", "应用 mcompass 设置"},
+            {"DEATH_POINTS_TITLE", "死亡记录 (按 'I' 或 'Esc' 关闭)##Deaths"},
+            {"DEATH_POINTS_EMPTY", "暂无死亡记录。"},
+            {"DEATH_POINTS_HINT", "死亡记录按世界保存，只能传送或指向当前维度的记录。"},
+            {"DEATH_POINT_TELEPORT", "传送"},
+            {"DEATH_POINT_POINT_COMPASS", "指向死亡点"},
+            {"DEATH_POINT_CANCEL_COMPASS", "取消指向死亡点"},
+            {"DEATH_POINT_DELETE", "删除"},
+            {"DIM_OVERWORLD", "主世界"},
+            {"DIM_NETHER", "下界"},
+            {"DIM_END", "末地"},
+            {"DIM_UNKNOWN", "未知维度"}
+        };
+        static const std::unordered_map<std::string, std::string> zhTW = {
+            {"MCOMPASS_TITLE", "mcompass"},
+            {"MCOMPASS_ENABLE", "啟用 mcompass BLE 同步"},
+            {"MCOMPASS_STATUS", "BLE 狀態: %s"},
+            {"MCOMPASS_DEVICE_NAME", "裝置名稱"},
+            {"MCOMPASS_INTERVAL", "BLE 間隔 ms"},
+            {"MCOMPASS_MIN_DELTA", "BLE 最小角度差"},
+            {"MCOMPASS_APPLY", "套用 mcompass 設定"},
+            {"DEATH_POINTS_TITLE", "死亡紀錄 (按 'I' 或 'Esc' 關閉)##Deaths"},
+            {"DEATH_POINTS_EMPTY", "暫無死亡紀錄。"},
+            {"DEATH_POINTS_HINT", "死亡紀錄按世界保存，只能傳送或指向目前維度的紀錄。"},
+            {"DEATH_POINT_TELEPORT", "傳送"},
+            {"DEATH_POINT_POINT_COMPASS", "指向死亡點"},
+            {"DEATH_POINT_CANCEL_COMPASS", "取消指向死亡點"},
+            {"DEATH_POINT_DELETE", "刪除"},
+            {"DIM_OVERWORLD", "主世界"},
+            {"DIM_NETHER", "下界"},
+            {"DIM_END", "終界"},
+            {"DIM_UNKNOWN", "未知維度"}
+        };
+
+        const auto* table = &en;
+        if (langCode == "zh_CN") table = &zhCN;
+        else if (langCode == "zh_TW") table = &zhTW;
+        auto it = table->find(key);
+        if (it != table->end()) return it->second;
+        auto fallback = en.find(key);
+        return fallback != en.end() ? fallback->second : std::string();
     }
 
     const char* GetText(const std::string& key) {
@@ -932,7 +1013,12 @@ namespace LanguageManager {
             return it->second.c_str();
         }
         std::string_view sv = ll::i18n::getInstance().get(key, g_currentLanguage);
-        g_translationCache[key] = std::string(sv);
+        std::string value(sv);
+        if (value.empty() || value == key) {
+            std::string extra = GetBuiltinExtraText(key, g_currentLanguage);
+            if (!extra.empty()) value = extra;
+        }
+        g_translationCache[key] = value;
         return g_translationCache[key].c_str();
     }
 }

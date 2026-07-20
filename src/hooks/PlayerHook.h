@@ -17,6 +17,7 @@
 #include <mc/world/level/block/Block.h>
 #include <mc/world/level/biome/Biome.h>
 #include "state/WaypointManager.h"
+#include "state/DeathPointManager.h"
 #include <mc/world/level/BlockPos.h>
 #include <mc/deps/core/math/Vec3.h>
 #include <mc/world/level/Level.h>
@@ -655,6 +656,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                 
                 MapCacheManager::SwitchWorld(finalWorldId, dimId);
                 WaypointManager::SwitchWorld(finalWorldId, dimId); 
+                DeathPointManager::SwitchWorld(finalWorldId);
                 
                 std::memset(g_mapHeights, 0, sizeof(g_mapHeights));
                 std::memset(g_mapColors, 0, sizeof(g_mapColors));
@@ -703,6 +705,32 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                 }
             }
         } catch (...) {}
+
+        static bool wasPlayerAlive = true;
+        static bool hasLastAlivePos = false;
+        static int lastAliveX = 0;
+        static int lastAliveY = 0;
+        static int lastAliveZ = 0;
+        static int lastAliveDimensionId = 0;
+
+        bool isPlayerAlive = true;
+        try {
+            isPlayerAlive = player->isAlive();
+        } catch (...) {
+            isPlayerAlive = true;
+        }
+
+        if (isPlayerAlive) {
+            wasPlayerAlive = true;
+            hasLastAlivePos = true;
+            lastAliveX = g_playerBlockX;
+            lastAliveY = (int)std::floor(g_playerY);
+            lastAliveZ = g_playerBlockZ;
+            lastAliveDimensionId = MapRenderState::currentDimensionId;
+        } else if (wasPlayerAlive && hasLastAlivePos && !MapRenderState::currentWorldId.empty()) {
+            DeathPointManager::AddDeathPoint(lastAliveX, lastAliveY, lastAliveZ, lastAliveDimensionId);
+            wasPlayerAlive = false;
+        }
 
         static bool lastUIState = false;
         bool currentUIState = MapRenderState::IsUIActive();

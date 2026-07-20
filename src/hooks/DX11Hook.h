@@ -28,12 +28,15 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <algorithm>
 #include <filesystem>
 #include <windows.h>
 #include "hooks/PlayerHook.h"
 #include "state/MapCacheManager.h"
 #include "state/WaypointManager.h"
+#include "state/DeathPointManager.h"
+#include "state/ExternalCompassSync.h"
 
 #include "state/LanguageManager.h"
 #include <wincodec.h>
@@ -98,6 +101,16 @@ namespace DX11Hook {
         if (!hwnd) hwnd = FindWindowW(L"Minecraft", NULL);
         if (!hwnd) hwnd = GetForegroundWindow();
         return hwnd;
+    }
+
+    inline const char* ExternalCompassStatusText() {
+        switch (MapRenderState::externalCompassStatus.load()) {
+        case 1: return "scanning";
+        case 2: return "connecting";
+        case 3: return "connected";
+        case 4: return "retrying";
+        default: return "disabled";
+        }
     }
 
     // ==========================================
@@ -740,6 +753,14 @@ namespace DX11Hook {
                 return 1;
             }
 
+            if (uMsg == WM_KEYDOWN && wParam == 0x49 && !isTyping) {
+                if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) {
+                    return CallWindowProc(oWndProc, hWnd, uMsg, wParam, lParam);
+                }
+                MapRenderState::showDeathPointUI = !MapRenderState::showDeathPointUI;
+                return 1;
+            }
+
             if (uMsg == WM_KEYDOWN && wParam == 0x4E && !isTyping) {
                 if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) {
                     return CallWindowProc(oWndProc, hWnd, uMsg, wParam, lParam);
@@ -789,6 +810,7 @@ namespace DX11Hook {
                     } else {
                         MapRenderState::showBigMap = false;
                         MapRenderState::showWaypointUI = false;
+                        MapRenderState::showDeathPointUI = false;
                     }
                     return 1;
                 }
@@ -831,6 +853,18 @@ namespace DX11Hook {
             return 1;
         }
 
+        if (uMsg == WM_KEYDOWN && wParam == 0x55 && !isTyping) {
+            if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) return 0;
+            MapRenderState::showWaypointUI = !MapRenderState::showWaypointUI;
+            return 1;
+        }
+
+        if (uMsg == WM_KEYDOWN && wParam == 0x49 && !isTyping) {
+            if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) return 0;
+            MapRenderState::showDeathPointUI = !MapRenderState::showDeathPointUI;
+            return 1;
+        }
+
         if (MapRenderState::IsUIActive()) {
             ClipCursor(NULL);
             if (uMsg == WM_KEYDOWN && wParam == VK_ESCAPE) {
@@ -842,6 +876,7 @@ namespace DX11Hook {
                 } else {
                     MapRenderState::showBigMap = false;
                     MapRenderState::showWaypointUI = false;
+                    MapRenderState::showDeathPointUI = false;
                 }
                 return 1;
             }
@@ -1752,7 +1787,7 @@ namespace DX11Hook {
             ImGui::OpenPopup("SettingsPopup");
         }
         
-        ImGui::SetNextWindowSize(ImVec2(300, 280));
+        ImGui::SetNextWindowSize(ImVec2(340, 430));
         if (ImGui::BeginPopup("SettingsPopup")) {
             ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), LanguageManager::GetText("SIDEBAR_OPS"));
             ImGui::Separator();
@@ -1770,6 +1805,36 @@ namespace DX11Hook {
             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
             if (ImGui::SliderFloat(LanguageManager::GetText("MINIMAP_SIZE"), &MapRenderState::minimapSize, 60.0f, 300.0f, "%.0f")) {
                 LanguageManager::SaveConfig();
+            }
+            ImGui::PopItemWidth();
+            ImGui::Spacing();
+
+            ImGui::Separator();
+            ImGui::TextUnformatted(LanguageManager::GetText("MCOMPASS_TITLE"));
+            if (ImGui::Checkbox(LanguageManager::GetText("MCOMPASS_ENABLE"), &MapRenderState::externalCompassEnabled)) {
+                LanguageManager::SaveConfig();
+                ExternalCompassSync::NotifyConfigChanged();
+            }
+            ImGui::Text(LanguageManager::GetText("MCOMPASS_STATUS"), ExternalCompassStatusText());
+
+            static bool externalCompassNameLoaded = false;
+            static char externalCompassNameBuf[64] = "MCOMPASS";
+            if (!externalCompassNameLoaded) {
+                strncpy_s(externalCompassNameBuf, MapRenderState::externalCompassDeviceName.c_str(), _TRUNCATE);
+                externalCompassNameLoaded = true;
+            }
+            ImGui::PushItemWidth(-1);
+            ImGui::InputText(LanguageManager::GetText("MCOMPASS_DEVICE_NAME"), externalCompassNameBuf, sizeof(externalCompassNameBuf));
+            if (ImGui::SliderInt(LanguageManager::GetText("MCOMPASS_INTERVAL"), &MapRenderState::externalCompassIntervalMs, 20, 1000)) {
+                LanguageManager::SaveConfig();
+            }
+            if (ImGui::SliderFloat(LanguageManager::GetText("MCOMPASS_MIN_DELTA"), &MapRenderState::externalCompassMinDelta, 0.1f, 10.0f, "%.1f deg")) {
+                LanguageManager::SaveConfig();
+            }
+            if (ImGui::Button(LanguageManager::GetText("MCOMPASS_APPLY"), ImVec2(ImGui::GetContentRegionAvail().x, 28.0f))) {
+                MapRenderState::externalCompassDeviceName = externalCompassNameBuf;
+                LanguageManager::SaveConfig();
+                ExternalCompassSync::NotifyConfigChanged();
             }
             ImGui::PopItemWidth();
             ImGui::Spacing();
@@ -1961,6 +2026,92 @@ namespace DX11Hook {
     // ==========================================
     // 路径点 ImGui 管理控制台 (添加搜索、重命名与传送)
     // ==========================================
+    inline const char* DimensionText(int dimensionId) {
+        switch (dimensionId) {
+        case 0: return LanguageManager::GetText("DIM_OVERWORLD");
+        case 1: return LanguageManager::GetText("DIM_NETHER");
+        case 2: return LanguageManager::GetText("DIM_END");
+        default: return LanguageManager::GetText("DIM_UNKNOWN");
+        }
+    }
+
+    inline std::string FormatDeathTime(long long timestamp) {
+        std::time_t raw = static_cast<std::time_t>(timestamp);
+        std::tm tm{};
+        if (localtime_s(&tm, &raw) != 0) return "-";
+        char buf[32];
+        std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M", &tm);
+        return buf;
+    }
+
+    inline void RenderImGuiDeathPointUI() {
+        ImGui::SetNextWindowSize(ImVec2(520, 420), ImGuiCond_FirstUseEver);
+        if (!ImGui::Begin(LanguageManager::GetText("DEATH_POINTS_TITLE"), &MapRenderState::showDeathPointUI, ImGuiWindowFlags_NoCollapse)) {
+            ImGui::End();
+            return;
+        }
+
+        std::vector<DeathPoint> points;
+        {
+            std::lock_guard<std::mutex> lock(DeathPointManager::g_deathMutex);
+            points = DeathPointManager::g_deathPoints;
+        }
+
+        if (points.empty()) {
+            ImGui::TextUnformatted(LanguageManager::GetText("DEATH_POINTS_EMPTY"));
+            ImGui::End();
+            return;
+        }
+
+        ImGui::Text(LanguageManager::GetText("DEATH_POINTS_HINT"));
+        ImGui::Separator();
+
+        float fullWidth = ImGui::GetContentRegionAvail().x;
+        for (const auto& point : points) {
+            ImGui::PushID(point.id.c_str());
+            ImGui::BeginGroup();
+            ImGui::Text("%s  X:%d Y:%d Z:%d", DimensionText(point.dimensionId), point.x, point.y, point.z);
+            ImGui::TextDisabled("%s", FormatDeathTime(point.timestamp).c_str());
+
+            bool sameDimension = point.dimensionId == MapRenderState::currentDimensionId;
+            bool compassConnected = MapRenderState::externalCompassStatus.load() == 3;
+            bool pointing = ExternalCompassSync::IsTargetPointing(point.id);
+            float buttonWidth = (fullWidth - ImGui::GetStyle().ItemSpacing.x * 2.0f) / 3.0f;
+
+            if (!sameDimension) ImGui::BeginDisabled();
+            if (ImGui::Button(LanguageManager::GetText("DEATH_POINT_TELEPORT"), ImVec2(buttonWidth, 0))) {
+                MapRenderState::tpTargetX = (float)point.x;
+                MapRenderState::tpTargetY = (float)point.y;
+                MapRenderState::tpTargetZ = (float)point.z;
+                MapRenderState::triggerTeleport.store(true);
+            }
+            if (!sameDimension) ImGui::EndDisabled();
+
+            ImGui::SameLine();
+            if (!sameDimension || !compassConnected) ImGui::BeginDisabled();
+            const char* compassLabel = pointing ? LanguageManager::GetText("DEATH_POINT_CANCEL_COMPASS") : LanguageManager::GetText("DEATH_POINT_POINT_COMPASS");
+            if (ImGui::Button(compassLabel, ImVec2(buttonWidth, 0))) {
+                if (pointing) {
+                    ExternalCompassSync::ClearTargetPoint();
+                } else {
+                    ExternalCompassSync::SetTargetPoint(point.id, (float)point.x, (float)point.z, point.dimensionId);
+                }
+            }
+            if (!sameDimension || !compassConnected) ImGui::EndDisabled();
+
+            ImGui::SameLine();
+            if (ImGui::Button(LanguageManager::GetText("DEATH_POINT_DELETE"), ImVec2(buttonWidth, 0))) {
+                if (pointing) ExternalCompassSync::ClearTargetPoint();
+                DeathPointManager::RemoveDeathPoint(point.id);
+            }
+            ImGui::EndGroup();
+            ImGui::Separator();
+            ImGui::PopID();
+        }
+
+        ImGui::End();
+    }
+
     inline void RenderImGuiWaypointUI() {
         ImGui::SetNextWindowSize(ImVec2(750, 480), ImGuiCond_FirstUseEver); 
         ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2 - 375, ImGui::GetIO().DisplaySize.y / 2 - 240), ImGuiCond_FirstUseEver);
@@ -2205,6 +2356,10 @@ namespace DX11Hook {
             RenderImGuiWaypointUI();
         }
 
+        if (MapRenderState::showDeathPointUI) {
+            RenderImGuiDeathPointUI();
+        }
+
         RenderPositionSettingsPanel();
 
         ImGui::Render();
@@ -2328,6 +2483,10 @@ namespace DX11Hook {
 
                 if (MapRenderState::showWaypointUI) {
                     RenderImGuiWaypointUI();
+                }
+
+                if (MapRenderState::showDeathPointUI) {
+                    RenderImGuiDeathPointUI();
                 }
 
                 RenderPositionSettingsPanel();

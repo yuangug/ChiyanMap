@@ -3,7 +3,9 @@
 #include "state/MapRenderState.h"
 #include "state/MapCacheManager.h"
 #include "state/WaypointManager.h"
+#include "state/DeathPointManager.h"
 #include "state/LanguageManager.h"
+#include "state/ExternalCompassSync.h"
 #include "ll/api/mod/RegisterHelper.h"
 #include <chrono>
 #include <atomic>
@@ -52,14 +54,17 @@ ChiyanMap& ChiyanMap::getInstance() {
 bool ChiyanMap::load() {
     registerAllHooks();
     LanguageManager::Init(); // 初始化语言及配置
+    ExternalCompassSync::Start();
     MapCacheManager::Init();
     WaypointManager::Init(); // 初始化地标 JSON 引擎
+    DeathPointManager::Init();
     return true;
 }
 
 bool ChiyanMap::enable()  { return true; }
 
 bool ChiyanMap::disable() {
+    ExternalCompassSync::Stop();
     MapCacheManager::Shutdown();
     unregisterAllHooks();
     return true;

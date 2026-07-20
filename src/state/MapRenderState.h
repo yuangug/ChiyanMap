@@ -25,11 +25,12 @@ namespace MapRenderState {
 
     // [新增] 路径点 UI 开启状态
     inline bool showWaypointUI = false;
+    inline bool showDeathPointUI = false;
     inline bool showPositionSettings = false; // 位置调整面板开关
 
     // [统一拦截枢纽] 判断是否有任何全屏 UI 处于活动状态
     inline bool IsUIActive() {
-        return showBigMap || showWaypointUI || showPositionSettings;
+        return showBigMap || showWaypointUI || showDeathPointUI || showPositionSettings;
     }
 
     // [新增] 跨菜单桥接：大地图右键唤起新建地标的预设坐标
@@ -56,6 +57,11 @@ namespace MapRenderState {
     inline float tempMinimapOffsetX = 0.0f; // 临时X偏移（撤销用）
     inline float tempMinimapOffsetY = 0.0f; // 临时Y偏移（撤销用）
     inline bool bigMapRotateWithPlayer = false; // 小地图跟随玩家旋转（false=上北下南, true=地图旋转指针固定）
+    inline bool externalCompassEnabled = false;
+    inline std::string externalCompassDeviceName = "MCOMPASS";
+    inline int externalCompassIntervalMs = 30;
+    inline float externalCompassMinDelta = 0.2f;
+    inline std::atomic<int> externalCompassStatus{0}; // 0=disabled,1=scanning,2=connecting,3=connected,4=retry
 }
 
 // 【全球探索级】：匹配 16 区块能见度的究极扫描半径（513x513个方块）！
