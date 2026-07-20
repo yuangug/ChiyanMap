@@ -643,6 +643,53 @@ namespace DX11Hook {
         return hr;
     }
 
+    inline void CloseMapUI() {
+        MapRenderState::showBigMap = false;
+        MapRenderState::showWaypointUI = false;
+        MapRenderState::showPositionSettings = false;
+    }
+
+    inline bool IsMapWorldActive() {
+        if (!g_clientInstance || !g_hasPlayer || !g_localPlayer) return false;
+        __try {
+            if (!g_clientInstance->isWorldActive()) return false;
+            if (!g_clientInstance->getLocalPlayer()) return false;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            return false;
+        }
+        return true;
+    }
+
+    inline bool IsNativeScreenBlockingMap(bool allowChiyanUI) {
+        if (!g_clientInstance) return true;
+        __try {
+            if (g_clientInstance->isShowingLoadingScreen()) return true;
+            if (g_clientInstance->isShowingProgressScreen()) return true;
+            if (g_clientInstance->isShowingWorldProgressScreen()) return true;
+            if (g_clientInstance->isShowingRealmsProgressScreen()) return true;
+            if (g_clientInstance->isShowingDeathScreen()) return true;
+            if (g_clientInstance->isShowingServerForm()) return true;
+            if (g_clientInstance->isShowingPauseScreen()) return true;
+            if (!(allowChiyanUI && MapRenderState::IsUIActive())) {
+                if (g_clientInstance->isShowingMenu()) return true;
+                if (!g_clientInstance->isInGameInputEnabled()) return true;
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            return true;
+        }
+        return false;
+    }
+
+    inline bool ShouldRenderMapOverlay() {
+        if (!IsMapWorldActive()) return false;
+        return !IsNativeScreenBlockingMap(true);
+    }
+
+    inline bool CanOpenMapUI() {
+        if (!IsMapWorldActive()) return false;
+        return !IsNativeScreenBlockingMap(false);
+    }
+
     inline void __stdcall hkExecuteCommandLists(ID3D12CommandQueue* pQueue, UINT NumCommandLists, ID3D12CommandList* const* ppCommandLists) {
         if (!g_pGameCommandQueue) {
             D3D12_COMMAND_QUEUE_DESC desc = pQueue->GetDesc();
@@ -667,6 +714,9 @@ namespace DX11Hook {
             if (uMsg == WM_KEYUP && wParam == VK_TAB) { g_tabHeld = false; }
 
             if (uMsg == WM_KEYDOWN && wParam == 0x4D && !isTyping) {
+                if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) {
+                    return CallWindowProc(oWndProc, hWnd, uMsg, wParam, lParam);
+                }
                 CURSORINFO ci = {}; ci.cbSize = sizeof(CURSORINFO);
                 if (GetCursorInfo(&ci)) {
                     if (ci.flags == CURSOR_SHOWING && !MapRenderState::IsUIActive()) {
@@ -683,11 +733,17 @@ namespace DX11Hook {
                 return 1;
             }
             if (uMsg == WM_KEYDOWN && wParam == 0x55 && !isTyping) {
+                if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) {
+                    return CallWindowProc(oWndProc, hWnd, uMsg, wParam, lParam);
+                }
                 MapRenderState::showWaypointUI = !MapRenderState::showWaypointUI;
                 return 1;
             }
 
             if (uMsg == WM_KEYDOWN && wParam == 0x4E && !isTyping) {
+                if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) {
+                    return CallWindowProc(oWndProc, hWnd, uMsg, wParam, lParam);
+                }
                 CURSORINFO ci = {}; ci.cbSize = sizeof(CURSORINFO);
                 if (GetCursorInfo(&ci)) {
                     if (ci.flags == CURSOR_SHOWING && !MapRenderState::IsUIActive()) {
@@ -700,6 +756,9 @@ namespace DX11Hook {
             }
 
             if (uMsg == WM_KEYDOWN && wParam == 0x59 && !isTyping) {
+                if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) {
+                    return CallWindowProc(oWndProc, hWnd, uMsg, wParam, lParam);
+                }
                 if (!MapRenderState::showMiniMap) {
                     return CallWindowProc(oWndProc, hWnd, uMsg, wParam, lParam);
                 }
@@ -763,6 +822,7 @@ namespace DX11Hook {
         }
 
         if (uMsg == WM_KEYDOWN && wParam == 0x4D && !isTyping) {
+            if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) return 0;
             MapRenderState::showBigMap = !MapRenderState::showBigMap;
             if (MapRenderState::showBigMap) {
                 MapRenderState::bigMapOffsetX = 0.0f;
@@ -2168,7 +2228,7 @@ namespace DX11Hook {
             DbgLog("RenderFromBRD missing device/context/rtv");
             return;
         }
-        if (!g_hasPlayer) {
+        if (!ShouldRenderMapOverlay()) {
             if (!loggedNoPlayer) {
                 DbgLog("RenderFromBRD waiting for player");
                 loggedNoPlayer = true;
@@ -2209,20 +2269,9 @@ namespace DX11Hook {
         static std::atomic<bool> isRendering{false};
         if (isRendering.exchange(true)) return;
 
-        if (g_clientInstance) {
-            __try {
-                if (g_clientInstance->isShowingLoadingScreen() ||
-                    g_clientInstance->isShowingProgressScreen() ||
-                    g_clientInstance->isShowingWorldProgressScreen() ||
-                    g_clientInstance->isShowingDeathScreen() ||
-                    (g_clientInstance->isShowingPauseScreen() && !MapRenderState::IsUIActive())) {
-                    isRendering = false;
-                    return;
-                }
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                isRendering = false;
-                return;
-            }
+        if (!ShouldRenderMapOverlay()) {
+            isRendering = false;
+            return;
         }
 
         static bool initAttempted = false; 

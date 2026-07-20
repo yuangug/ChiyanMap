@@ -317,6 +317,7 @@ inline mce::Color getBlockColor(std::string const& name, mce::Color grassCol, mc
 
     if (name.find("wart") != std::string::npos) return mce::Color(0.65f, 0.10f, 0.10f, 1.0f);
     if (name.find("chorus") != std::string::npos) return mce::Color(0.60f, 0.40f, 0.60f, 1.0f);
+    if (name.find("purpur") != std::string::npos) return mce::Color(0.66f, 0.48f, 0.64f, 1.0f);
 
     if (name.find("grass") != std::string::npos || name.find("fern") != std::string::npos || name.find("moss") != std::string::npos ||
         name.find("shrub") != std::string::npos || name.find("plant") != std::string::npos || name.find("vine") != std::string::npos ||
@@ -1112,6 +1113,9 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
     } else {
         g_hasPlayer   = false;
         g_localPlayer = nullptr;
+        MapRenderState::showBigMap = false;
+        MapRenderState::showWaypointUI = false;
+        MapRenderState::showPositionSettings = false;
     }
 
 }
