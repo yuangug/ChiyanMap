@@ -1338,10 +1338,19 @@ namespace DX11Hook {
 
         char coordBuf[64];
         snprintf(coordBuf, sizeof(coordBuf), "%d, %d, %d", g_playerBlockX, (int)g_playerY, g_playerBlockZ);
-        ImVec2 coordSize = ImGui::CalcTextSize(coordBuf);
-        ImVec2 coordPos(cx - coordSize.x / 2, cy + IM_MAP_R + 22); 
-        draw_list->AddText(ImVec2(coordPos.x + 1, coordPos.y + 1), IM_COL32(0,0,0,200), coordBuf);
-        draw_list->AddText(coordPos, IM_COL32(255, 255, 255, 255), coordBuf);
+        ImFont* infoFont = ImGui::GetFont();
+        float infoFontSize = std::clamp(IM_MAP_R * 0.15f, 16.0f, 24.0f);
+        float infoLineGap = infoFontSize * 1.32f;
+        auto calcInfoTextSize = [&](const char* text) {
+            return infoFont->CalcTextSizeA(infoFontSize, 1.0e9f, 0.0f, text);
+        };
+        auto addInfoText = [&](ImVec2 pos, ImU32 color, const char* text) {
+            draw_list->AddText(infoFont, infoFontSize, ImVec2(pos.x + 1.0f, pos.y + 1.0f), IM_COL32(0, 0, 0, 210), text);
+            draw_list->AddText(infoFont, infoFontSize, pos, color, text);
+        };
+        ImVec2 coordSize = calcInfoTextSize(coordBuf);
+        ImVec2 coordPos(cx - coordSize.x / 2, cy + IM_MAP_R + infoFontSize * 1.15f);
+        addInfoText(coordPos, IM_COL32(255, 255, 255, 255), coordBuf);
 
         std::string biomeStr = MapRenderState::currentBiomeName;
         size_t startPos = biomeStr.find("(");
@@ -1349,10 +1358,9 @@ namespace DX11Hook {
         if (startPos != std::string::npos && endPos != std::string::npos) {
             biomeStr = biomeStr.substr(startPos + 1, endPos - startPos - 1);
         }
-        ImVec2 biomeSize = ImGui::CalcTextSize(biomeStr.c_str());
-        ImVec2 biomePos(cx - biomeSize.x / 2, cy + IM_MAP_R + 46);
-        draw_list->AddText(ImVec2(biomePos.x + 1, biomePos.y + 1), IM_COL32(0,0,0,200), biomeStr.c_str());
-        draw_list->AddText(biomePos, IM_COL32(220, 220, 220, 255), biomeStr.c_str());
+        ImVec2 biomeSize = calcInfoTextSize(biomeStr.c_str());
+        ImVec2 biomePos(cx - biomeSize.x / 2, coordPos.y + infoLineGap);
+        addInfoText(biomePos, IM_COL32(220, 220, 220, 255), biomeStr.c_str());
 
         if (MapRenderState::bigMapRotateWithPlayer) {
             float compassR = IM_MAP_R + 16.0f;
@@ -1371,15 +1379,12 @@ namespace DX11Hook {
         }
 
         {
-            char modeBuf[64];
+            char modeBuf[64] = {};
             if (MapRenderState::caveMode) {
                 snprintf(modeBuf, sizeof(modeBuf), LanguageManager::GetText("CAVE_MODE"), MapRenderState::caveScanY);
-            }
-            ImVec2 modeSize = ImGui::CalcTextSize(modeBuf);
-            ImVec2 modePos(cx - modeSize.x / 2, cy + IM_MAP_R + 66);
-            if (MapRenderState::caveMode) {
-                draw_list->AddText(ImVec2(modePos.x + 1, modePos.y + 1), IM_COL32(0,0,0,200), modeBuf);
-                draw_list->AddText(modePos, IM_COL32(255, 200, 50, 255), modeBuf);
+                ImVec2 modeSize = calcInfoTextSize(modeBuf);
+                ImVec2 modePos(cx - modeSize.x / 2, biomePos.y + infoLineGap);
+                addInfoText(modePos, IM_COL32(255, 200, 50, 255), modeBuf);
             }
         }
 
