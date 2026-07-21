@@ -63,6 +63,98 @@ namespace DX11Hook {
         }
     }
 
+    enum class OreButtonKind { Default, Primary, Success, Warning, Danger, Compass };
+
+    inline ImVec4 OreColor(int r, int g, int b, int a = 255) {
+        return ImVec4(r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f);
+    }
+
+    inline void ApplyOreUIStyle() {
+        ImGuiStyle& style = ImGui::GetStyle();
+        style.WindowPadding = ImVec2(14.0f, 12.0f);
+        style.FramePadding = ImVec2(10.0f, 6.0f);
+        style.CellPadding = ImVec2(8.0f, 6.0f);
+        style.ItemSpacing = ImVec2(8.0f, 8.0f);
+        style.ItemInnerSpacing = ImVec2(6.0f, 5.0f);
+        style.WindowRounding = 5.0f;
+        style.ChildRounding = 4.0f;
+        style.FrameRounding = 3.0f;
+        style.PopupRounding = 4.0f;
+        style.ScrollbarRounding = 3.0f;
+        style.GrabRounding = 3.0f;
+        style.WindowBorderSize = 1.0f;
+        style.ChildBorderSize = 1.0f;
+        style.PopupBorderSize = 1.0f;
+        style.FrameBorderSize = 1.0f;
+
+        ImVec4* colors = style.Colors;
+        colors[ImGuiCol_Text] = OreColor(236, 238, 240);
+        colors[ImGuiCol_TextDisabled] = OreColor(135, 143, 150);
+        colors[ImGuiCol_WindowBg] = OreColor(25, 27, 29, 238);
+        colors[ImGuiCol_ChildBg] = OreColor(31, 34, 36, 230);
+        colors[ImGuiCol_PopupBg] = OreColor(23, 25, 27, 248);
+        colors[ImGuiCol_Border] = OreColor(86, 92, 98, 190);
+        colors[ImGuiCol_FrameBg] = OreColor(45, 49, 52, 245);
+        colors[ImGuiCol_FrameBgHovered] = OreColor(57, 62, 66, 255);
+        colors[ImGuiCol_FrameBgActive] = OreColor(68, 74, 79, 255);
+        colors[ImGuiCol_TitleBg] = OreColor(18, 20, 22, 255);
+        colors[ImGuiCol_TitleBgActive] = OreColor(31, 34, 36, 255);
+        colors[ImGuiCol_Button] = OreColor(58, 63, 67, 255);
+        colors[ImGuiCol_ButtonHovered] = OreColor(74, 81, 86, 255);
+        colors[ImGuiCol_ButtonActive] = OreColor(48, 53, 57, 255);
+        colors[ImGuiCol_Header] = OreColor(59, 65, 69, 210);
+        colors[ImGuiCol_HeaderHovered] = OreColor(73, 80, 86, 235);
+        colors[ImGuiCol_HeaderActive] = OreColor(88, 97, 104, 255);
+        colors[ImGuiCol_CheckMark] = OreColor(108, 214, 140);
+        colors[ImGuiCol_SliderGrab] = OreColor(234, 197, 79);
+        colors[ImGuiCol_SliderGrabActive] = OreColor(255, 222, 105);
+        colors[ImGuiCol_Separator] = OreColor(89, 96, 102, 180);
+        colors[ImGuiCol_ScrollbarBg] = OreColor(18, 20, 22, 180);
+        colors[ImGuiCol_ScrollbarGrab] = OreColor(83, 91, 97, 240);
+        colors[ImGuiCol_ScrollbarGrabHovered] = OreColor(104, 114, 122, 255);
+        colors[ImGuiCol_ScrollbarGrabActive] = OreColor(123, 135, 144, 255);
+    }
+
+    inline void PushOreButtonStyle(OreButtonKind kind) {
+        ImVec4 base = OreColor(58, 63, 67);
+        ImVec4 hover = OreColor(74, 81, 86);
+        ImVec4 active = OreColor(48, 53, 57);
+        if (kind == OreButtonKind::Primary) { base = OreColor(40, 122, 173); hover = OreColor(54, 146, 199); active = OreColor(30, 96, 140); }
+        else if (kind == OreButtonKind::Success) { base = OreColor(56, 139, 80); hover = OreColor(68, 166, 96); active = OreColor(43, 112, 64); }
+        else if (kind == OreButtonKind::Warning) { base = OreColor(158, 118, 38); hover = OreColor(188, 143, 50); active = OreColor(130, 95, 28); }
+        else if (kind == OreButtonKind::Danger) { base = OreColor(168, 58, 56); hover = OreColor(202, 72, 69); active = OreColor(132, 42, 41); }
+        else if (kind == OreButtonKind::Compass) { base = OreColor(191, 126, 40); hover = OreColor(220, 151, 55); active = OreColor(154, 96, 28); }
+        ImGui::PushStyleColor(ImGuiCol_Button, base);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hover);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, active);
+    }
+
+    inline void PopOreButtonStyle() {
+        ImGui::PopStyleColor(3);
+    }
+
+    inline void OreSectionHeader(const char* text) {
+        ImGui::Spacing();
+        ImGui::TextColored(OreColor(234, 197, 79), "%s", text);
+        ImGui::Separator();
+    }
+
+    inline void OreTag(const char* text, ImVec4 color) {
+        ImGui::PushStyleColor(ImGuiCol_Text, color);
+        ImGui::Text("[%s]", text);
+        ImGui::PopStyleColor();
+    }
+
+    inline ImVec4 ExternalCompassStatusColor() {
+        switch (MapRenderState::externalCompassStatus.load()) {
+        case 1:
+        case 2: return OreColor(234, 197, 79);
+        case 3: return OreColor(108, 214, 140);
+        case 4: return OreColor(220, 92, 86);
+        default: return OreColor(145, 153, 160);
+        }
+    }
+
     typedef HRESULT(__stdcall* Present_t)(IDXGISwapChain*, UINT, UINT);
     typedef HRESULT(__stdcall* Present1_t)(IDXGISwapChain1*, UINT, UINT, const DXGI_PRESENT_PARAMETERS*);
     typedef HRESULT(__stdcall* ResizeBuffers_t)(IDXGISwapChain*, UINT, UINT, UINT, DXGI_FORMAT, UINT);
@@ -865,6 +957,21 @@ namespace DX11Hook {
             return 1;
         }
 
+        if (uMsg == WM_KEYDOWN && wParam == 0x4E && !isTyping) {
+            if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) return 0;
+            MapRenderState::showMiniMap = !MapRenderState::showMiniMap;
+            LanguageManager::SaveConfig();
+            return 1;
+        }
+
+        if (uMsg == WM_KEYDOWN && wParam == 0x59 && !isTyping) {
+            if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) return 0;
+            if (!MapRenderState::showMiniMap) return 0;
+            MapRenderState::isSquareMap = !MapRenderState::isSquareMap;
+            LanguageManager::SaveConfig();
+            return 1;
+        }
+
         if (MapRenderState::IsUIActive()) {
             ClipCursor(NULL);
             if (uMsg == WM_KEYDOWN && wParam == VK_ESCAPE) {
@@ -1517,6 +1624,7 @@ namespace DX11Hook {
                 ImGui::InputText(LanguageManager::GetText("WP_NAME"), renameBuf, sizeof(renameBuf));
                 ImGui::Spacing();
                 
+                PushOreButtonStyle(OreButtonKind::Success);
                 if (ImGui::Button(LanguageManager::GetText("WP_SAVE"), ImVec2(120, 0))) {
                     {
                         std::lock_guard<std::mutex> lock(WaypointManager::g_wpMutex);
@@ -1531,11 +1639,14 @@ namespace DX11Hook {
                     ImGui::CloseCurrentPopup();
                     initialized = false;
                 }
+                PopOreButtonStyle();
                 ImGui::SameLine();
+                PushOreButtonStyle(OreButtonKind::Default);
                 if (ImGui::Button(LanguageManager::GetText("WP_CANCEL"), ImVec2(120, 0))) {
                     ImGui::CloseCurrentPopup();
                     initialized = false;
                 }
+                PopOreButtonStyle();
             }
             ImGui::EndPopup();
         }
@@ -1763,9 +1874,9 @@ namespace DX11Hook {
                                  IM_COL32(0, 0, 0, 180), 5.0f);
         draw_list->AddText(ImVec2(io.DisplaySize.x / 2 - biomeTextSize.x / 2, 25), IM_COL32(180, 255, 180, 255), biomeBuf);
 
-        ImGui::SetCursorPos(ImVec2(io.DisplaySize.x - 240, 20));
+        ImGui::SetCursorPos(ImVec2(io.DisplaySize.x - 290, 20));
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.6f));
-        ImGui::BeginChild("MapSidebar", ImVec2(220, 150), true, ImGuiWindowFlags_NoScrollbar);
+        ImGui::BeginChild("MapSidebar", ImVec2(270, 190), true, ImGuiWindowFlags_NoScrollbar);
         
         ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), LanguageManager::GetText("SIDEBAR_PLAYER_STATUS"));
         ImGui::Separator();
@@ -1777,20 +1888,23 @@ namespace DX11Hook {
         
         // 并排摆放 [视角回中] 主按钮与 [⚙] 齿轮设置按钮
         float availWidth = ImGui::GetContentRegionAvail().x;
+        PushOreButtonStyle(OreButtonKind::Primary);
         if (ImGui::Button(LanguageManager::GetText("CENTER_CAMERA"), ImVec2(availWidth - 42.0f, 35.0f))) {
             MapRenderState::bigMapOffsetX = 0.0f;
             MapRenderState::bigMapOffsetZ = 0.0f;
         }
+        PopOreButtonStyle();
         ImGui::SameLine();
         
+        PushOreButtonStyle(OreButtonKind::Warning);
         if (ImGui::Button("\xe2\x9a\x99", ImVec2(35.0f, 35.0f))) {
             ImGui::OpenPopup("SettingsPopup");
         }
+        PopOreButtonStyle();
         
-        ImGui::SetNextWindowSize(ImVec2(340, 430));
+        ImGui::SetNextWindowSize(ImVec2(380, 500));
         if (ImGui::BeginPopup("SettingsPopup")) {
-            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), LanguageManager::GetText("SIDEBAR_OPS"));
-            ImGui::Separator();
+            OreSectionHeader(LanguageManager::GetText("SIDEBAR_OPS"));
             
             if (ImGui::Checkbox(LanguageManager::GetText("SHOW_MINIMAP"), &MapRenderState::showMiniMap)) {
                 LanguageManager::SaveConfig();
@@ -1809,36 +1923,40 @@ namespace DX11Hook {
             ImGui::PopItemWidth();
             ImGui::Spacing();
 
-            ImGui::Separator();
-            ImGui::TextUnformatted(LanguageManager::GetText("MCOMPASS_TITLE"));
+            OreSectionHeader(LanguageManager::GetText("MCOMPASS_TITLE"));
+            ImGui::TextColored(ExternalCompassStatusColor(), LanguageManager::GetText("MCOMPASS_STATUS"), ExternalCompassStatusText());
             if (ImGui::Checkbox(LanguageManager::GetText("MCOMPASS_ENABLE"), &MapRenderState::externalCompassEnabled)) {
                 LanguageManager::SaveConfig();
                 ExternalCompassSync::NotifyConfigChanged();
             }
-            ImGui::Text(LanguageManager::GetText("MCOMPASS_STATUS"), ExternalCompassStatusText());
 
-            static bool externalCompassNameLoaded = false;
-            static char externalCompassNameBuf[64] = "MCOMPASS";
-            if (!externalCompassNameLoaded) {
-                strncpy_s(externalCompassNameBuf, MapRenderState::externalCompassDeviceName.c_str(), _TRUNCATE);
-                externalCompassNameLoaded = true;
+            if (MapRenderState::externalCompassEnabled) {
+                static bool externalCompassNameLoaded = false;
+                static char externalCompassNameBuf[64] = "MCOMPASS";
+                if (!externalCompassNameLoaded) {
+                    strncpy_s(externalCompassNameBuf, MapRenderState::externalCompassDeviceName.c_str(), _TRUNCATE);
+                    externalCompassNameLoaded = true;
+                }
+                ImGui::PushItemWidth(-1);
+                ImGui::InputText(LanguageManager::GetText("MCOMPASS_DEVICE_NAME"), externalCompassNameBuf, sizeof(externalCompassNameBuf));
+                if (ImGui::SliderInt(LanguageManager::GetText("MCOMPASS_INTERVAL"), &MapRenderState::externalCompassIntervalMs, 20, 1000)) {
+                    LanguageManager::SaveConfig();
+                }
+                if (ImGui::SliderFloat(LanguageManager::GetText("MCOMPASS_MIN_DELTA"), &MapRenderState::externalCompassMinDelta, 0.1f, 10.0f, "%.1f deg")) {
+                    LanguageManager::SaveConfig();
+                }
+                PushOreButtonStyle(OreButtonKind::Primary);
+                if (ImGui::Button(LanguageManager::GetText("MCOMPASS_APPLY"), ImVec2(ImGui::GetContentRegionAvail().x, 28.0f))) {
+                    MapRenderState::externalCompassDeviceName = externalCompassNameBuf;
+                    LanguageManager::SaveConfig();
+                    ExternalCompassSync::NotifyConfigChanged();
+                }
+                PopOreButtonStyle();
+                ImGui::PopItemWidth();
             }
-            ImGui::PushItemWidth(-1);
-            ImGui::InputText(LanguageManager::GetText("MCOMPASS_DEVICE_NAME"), externalCompassNameBuf, sizeof(externalCompassNameBuf));
-            if (ImGui::SliderInt(LanguageManager::GetText("MCOMPASS_INTERVAL"), &MapRenderState::externalCompassIntervalMs, 20, 1000)) {
-                LanguageManager::SaveConfig();
-            }
-            if (ImGui::SliderFloat(LanguageManager::GetText("MCOMPASS_MIN_DELTA"), &MapRenderState::externalCompassMinDelta, 0.1f, 10.0f, "%.1f deg")) {
-                LanguageManager::SaveConfig();
-            }
-            if (ImGui::Button(LanguageManager::GetText("MCOMPASS_APPLY"), ImVec2(ImGui::GetContentRegionAvail().x, 28.0f))) {
-                MapRenderState::externalCompassDeviceName = externalCompassNameBuf;
-                LanguageManager::SaveConfig();
-                ExternalCompassSync::NotifyConfigChanged();
-            }
-            ImGui::PopItemWidth();
             ImGui::Spacing();
 
+            OreSectionHeader(LanguageManager::GetText("LANG_SELECT"));
             std::string previewName = LanguageManager::g_currentLanguage;
             for (const auto& p : LanguageManager::g_availableLanguages) {
                 if (p.first == LanguageManager::g_currentLanguage) {
@@ -2045,7 +2163,7 @@ namespace DX11Hook {
     }
 
     inline void RenderImGuiDeathPointUI() {
-        ImGui::SetNextWindowSize(ImVec2(520, 420), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(720, 520), ImGuiCond_FirstUseEver);
         if (!ImGui::Begin(LanguageManager::GetText("DEATH_POINTS_TITLE"), &MapRenderState::showDeathPointUI, ImGuiWindowFlags_NoCollapse)) {
             ImGui::End();
             return;
@@ -2058,38 +2176,59 @@ namespace DX11Hook {
         }
 
         if (points.empty()) {
+            ImGui::Dummy(ImVec2(1.0f, 120.0f));
+            float textWidth = ImGui::CalcTextSize(LanguageManager::GetText("DEATH_POINTS_EMPTY")).x;
+            ImGui::SetCursorPosX((ImGui::GetWindowWidth() - textWidth) * 0.5f);
             ImGui::TextUnformatted(LanguageManager::GetText("DEATH_POINTS_EMPTY"));
             ImGui::End();
             return;
         }
 
-        ImGui::Text(LanguageManager::GetText("DEATH_POINTS_HINT"));
+        ImGui::TextDisabled("%s", LanguageManager::GetText("DEATH_POINTS_HINT"));
         ImGui::Separator();
 
-        float fullWidth = ImGui::GetContentRegionAvail().x;
+        ImGui::BeginChild("DeathPointList", ImVec2(0, 0), false);
         for (const auto& point : points) {
             ImGui::PushID(point.id.c_str());
-            ImGui::BeginGroup();
-            ImGui::Text("%s  X:%d Y:%d Z:%d", DimensionText(point.dimensionId), point.x, point.y, point.z);
-            ImGui::TextDisabled("%s", FormatDeathTime(point.timestamp).c_str());
 
             bool sameDimension = point.dimensionId == MapRenderState::currentDimensionId;
             bool compassConnected = MapRenderState::externalCompassStatus.load() == 3;
             bool pointing = ExternalCompassSync::IsTargetPointing(point.id);
-            float buttonWidth = (fullWidth - ImGui::GetStyle().ItemSpacing.x * 2.0f) / 3.0f;
+
+            ImVec4 rowBg = pointing ? OreColor(67, 50, 25, 230) : OreColor(35, 39, 42, 220);
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, rowBg);
+            ImGui::BeginChild("DeathRow", ImVec2(0, 132), true, ImGuiWindowFlags_NoScrollbar);
+
+            ImGui::BeginGroup();
+            ImVec4 dimColor = sameDimension ? OreColor(108, 214, 140) : OreColor(170, 174, 178);
+            OreTag(DimensionText(point.dimensionId), dimColor);
+            if (pointing) {
+                ImGui::SameLine();
+                OreTag(LanguageManager::GetText("DEATH_POINT_CANCEL_COMPASS"), OreColor(234, 197, 79));
+            }
+            ImGui::Text("X:%d  Y:%d  Z:%d", point.x, point.y, point.z);
+            ImGui::TextDisabled("%s", FormatDeathTime(point.timestamp).c_str());
+            ImGui::EndGroup();
+
+            float buttonWidth = 158.0f;
+            float rightX = ImGui::GetWindowWidth() - buttonWidth - 16.0f;
+            ImGui::SameLine(rightX);
+            ImGui::BeginGroup();
 
             if (!sameDimension) ImGui::BeginDisabled();
+            PushOreButtonStyle(OreButtonKind::Primary);
             if (ImGui::Button(LanguageManager::GetText("DEATH_POINT_TELEPORT"), ImVec2(buttonWidth, 0))) {
                 MapRenderState::tpTargetX = (float)point.x;
                 MapRenderState::tpTargetY = (float)point.y;
                 MapRenderState::tpTargetZ = (float)point.z;
                 MapRenderState::triggerTeleport.store(true);
             }
+            PopOreButtonStyle();
             if (!sameDimension) ImGui::EndDisabled();
 
-            ImGui::SameLine();
             if (!sameDimension || !compassConnected) ImGui::BeginDisabled();
             const char* compassLabel = pointing ? LanguageManager::GetText("DEATH_POINT_CANCEL_COMPASS") : LanguageManager::GetText("DEATH_POINT_POINT_COMPASS");
+            PushOreButtonStyle(OreButtonKind::Compass);
             if (ImGui::Button(compassLabel, ImVec2(buttonWidth, 0))) {
                 if (pointing) {
                     ExternalCompassSync::ClearTargetPoint();
@@ -2097,17 +2236,23 @@ namespace DX11Hook {
                     ExternalCompassSync::SetTargetPoint(point.id, (float)point.x, (float)point.z, point.dimensionId);
                 }
             }
+            PopOreButtonStyle();
             if (!sameDimension || !compassConnected) ImGui::EndDisabled();
 
-            ImGui::SameLine();
+            PushOreButtonStyle(OreButtonKind::Danger);
             if (ImGui::Button(LanguageManager::GetText("DEATH_POINT_DELETE"), ImVec2(buttonWidth, 0))) {
                 if (pointing) ExternalCompassSync::ClearTargetPoint();
                 DeathPointManager::RemoveDeathPoint(point.id);
             }
+            PopOreButtonStyle();
             ImGui::EndGroup();
-            ImGui::Separator();
+
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
             ImGui::PopID();
         }
+        ImGui::EndChild();
 
         ImGui::End();
     }
@@ -2177,19 +2322,15 @@ namespace DX11Hook {
                     }
                     
                     ImGui::SameLine(winWidth - 195);
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.6f, 0.2f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.7f, 0.3f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.5f, 0.1f, 1.0f));
+                    PushOreButtonStyle(OreButtonKind::Warning);
                     if (ImGui::Button(LanguageManager::GetText("WP_LIST_RENAME"), ImVec2(55, 0))) {
                         uiRenameId = wp.id;
                         uiTriggerRename = true;
                     }
-                    ImGui::PopStyleColor(3);
+                    PopOreButtonStyle();
 
                     ImGui::SameLine(winWidth - 135);
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.8f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 0.9f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.5f, 0.7f, 1.0f));
+                    PushOreButtonStyle(OreButtonKind::Primary);
                     if (ImGui::Button(LanguageManager::GetText("WP_LIST_TELEPORT"), ImVec2(45, 0))) {
                         MapRenderState::tpTargetX = (float)wp.x + 0.5f;
                         MapRenderState::tpTargetY = (float)wp.y; 
@@ -2197,16 +2338,14 @@ namespace DX11Hook {
                         MapRenderState::triggerTeleport.store(true);
                         triggerTp = true;
                     }
-                    ImGui::PopStyleColor(3);
+                    PopOreButtonStyle();
 
                     ImGui::SameLine(winWidth - 75);
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.1f, 0.1f, 1.0f));
+                    PushOreButtonStyle(OreButtonKind::Danger);
                     if (ImGui::Button(LanguageManager::GetText("WP_LIST_DELETE"), ImVec2(45, 0))) {
                         toDelete = wp.id;
                     }
-                    ImGui::PopStyleColor(3);
+                    PopOreButtonStyle();
                     
                     ImGui::PopID();
                     ImGui::Separator();
@@ -2258,16 +2397,20 @@ namespace DX11Hook {
                 ImGui::ColorEdit3(LanguageManager::GetText("WP_COLOR"), col);
                 
                 ImGui::Spacing();
+                PushOreButtonStyle(OreButtonKind::Success);
                 if (ImGui::Button(LanguageManager::GetText("WP_SAVE"), ImVec2(120, 0))) {
                     WaypointManager::AddWaypoint(nameBuf, pos[0], pos[1], pos[2], col[0], col[1], col[2]);
                     showAddPopup = false;
                     ImGui::CloseCurrentPopup();
                 }
+                PopOreButtonStyle();
                 ImGui::SameLine();
+                PushOreButtonStyle(OreButtonKind::Default);
                 if (ImGui::Button(LanguageManager::GetText("WP_CANCEL"), ImVec2(120, 0))) {
                     showAddPopup = false;
                     ImGui::CloseCurrentPopup();
                 }
+                PopOreButtonStyle();
                 ImGui::EndPopup();
             }
         }
@@ -2292,8 +2435,7 @@ namespace DX11Hook {
         ImGuiWindowFlags posFlags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar;
         bool open = true;
         if (ImGui::Begin("PositionSettings", &open, posFlags)) {
-            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), LanguageManager::GetText("POSITION_SETTINGS"));
-            ImGui::Separator();
+            OreSectionHeader(LanguageManager::GetText("POSITION_SETTINGS"));
             ImGui::Spacing();
 
             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
@@ -2306,6 +2448,7 @@ namespace DX11Hook {
             ImGui::Spacing();
 
             float btnW = (ImGui::GetContentRegionAvail().x - 10.0f) * 0.5f;
+            PushOreButtonStyle(OreButtonKind::Success);
             if (ImGui::Button(LanguageManager::GetText("SAVE_EXIT"), ImVec2(btnW, 35.0f))) {
                 MapRenderState::minimapOffsetX = MapRenderState::tempMinimapOffsetX;
                 MapRenderState::minimapOffsetY = MapRenderState::tempMinimapOffsetY;
@@ -2313,13 +2456,16 @@ namespace DX11Hook {
                 MapRenderState::showPositionSettings = false;
                 MapRenderState::showBigMap = true;
             }
+            PopOreButtonStyle();
             ImGui::SameLine();
+            PushOreButtonStyle(OreButtonKind::Default);
             if (ImGui::Button(LanguageManager::GetText("DONT_SAVE"), ImVec2(btnW, 35.0f))) {
                 MapRenderState::tempMinimapOffsetX = MapRenderState::minimapOffsetX;
                 MapRenderState::tempMinimapOffsetY = MapRenderState::minimapOffsetY;
                 MapRenderState::showPositionSettings = false;
                 MapRenderState::showBigMap = true;
             }
+            PopOreButtonStyle();
         }
         ImGui::End();
     }
@@ -2402,6 +2548,7 @@ namespace DX11Hook {
             ImGui::CreateContext();
             ImGuiIO& io = ImGui::GetIO();
             InitImGuiFonts(io);
+            ApplyOreUIStyle();
             ImGui_ImplWin32_Init(g_hWnd);
             ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
             InitMapTexture();
@@ -2458,6 +2605,7 @@ namespace DX11Hook {
                 ImGuiIO& io = ImGui::GetIO();
 
                 InitImGuiFonts(io);
+                ApplyOreUIStyle();
                 ImGui_ImplWin32_Init(g_hWnd);
                 ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
                 
