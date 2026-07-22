@@ -1,1 +1,1 @@
-一个基于LeviLamina的Minecraft基岩版客户端地图模组。
+一个基于LeviLamina的Minecraft基岩版客户端地图模组。稍微修改了一些东西。
