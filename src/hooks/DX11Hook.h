@@ -1083,14 +1083,18 @@ namespace DX11Hook {
                 static mce::Color localColors[MAP_DATA_SIZE][MAP_DATA_SIZE];
                 static float localHeights[MAP_DATA_SIZE][MAP_DATA_SIZE];
                 static bool localWaterFlags[MAP_DATA_SIZE][MAP_DATA_SIZE];
+                static float localBrightness[MAP_DATA_SIZE][MAP_DATA_SIZE];
                 float centerX, centerZ;
+                bool useCaveLighting;
                 {
                     std::lock_guard<std::mutex> lock(g_mapDataMutex);
                     std::memcpy(localColors, g_mapColors, sizeof(localColors));
                     std::memcpy(localHeights, g_mapHeights, sizeof(localHeights));
                     std::memcpy(localWaterFlags, g_mapWaterFlags, sizeof(localWaterFlags));
+                    std::memcpy(localBrightness, g_mapBrightness, sizeof(localBrightness));
                     centerX = g_lastRenderX;
                     centerZ = g_lastRenderZ;
+                    useCaveLighting = MapRenderState::caveMode;
                 }
 
                 static uint8_t bakedData[MAP_DATA_SIZE * MAP_DATA_SIZE * 4];
@@ -1099,14 +1103,26 @@ namespace DX11Hook {
                         int index = (z * MAP_DATA_SIZE + x) * 4;
                         mce::Color col = localColors[x][z];
 
-                        if (col.a > 0.01f) {
+                        if (useCaveLighting && localBrightness[x][z] < 0.0f) {
+                            // 墙和未加载列从扫描阶段就标为负亮度，始终保持纯黑。
+                            bakedData[index] = bakedData[index + 1] = bakedData[index + 2] = 0;
+                            bakedData[index + 3] = 255;
+                        } else if (col.a > 0.01f) {
                             float currentY = localHeights[x][z];
                             float northY = currentY, westY = currentY;
-                            if (z > 0 && localColors[x][z - 1].a > 0.01f && std::abs(currentY - localHeights[x][z - 1]) < 64.0f) northY = localHeights[x][z - 1];
-                            if (x > 0 && localColors[x - 1][z].a > 0.01f && std::abs(currentY - localHeights[x - 1][z]) < 64.0f) westY = localHeights[x - 1][z];
+                            bool northIsFloor = z > 0 && localColors[x][z - 1].a > 0.01f &&
+                                (!useCaveLighting || localBrightness[x][z - 1] >= 0.0f);
+                            bool westIsFloor = x > 0 && localColors[x - 1][z].a > 0.01f &&
+                                (!useCaveLighting || localBrightness[x - 1][z] >= 0.0f);
+                            if (northIsFloor && std::abs(currentY - localHeights[x][z - 1]) < 64.0f) northY = localHeights[x][z - 1];
+                            if (westIsFloor && std::abs(currentY - localHeights[x - 1][z]) < 64.0f) westY = localHeights[x - 1][z];
 
                             float diff = (currentY - northY) * 0.15f + (currentY - westY) * 0.15f;
                             float shade = std::clamp(1.0f + diff, 0.65f, 1.25f);
+                            if (useCaveLighting) {
+                                float light = std::clamp(localBrightness[x][z], 0.0f, 1.0f);
+                                shade *= 0.20f + 0.80f * light;
+                            }
                             bakedData[index]     = (uint8_t)(std::clamp(col.r * shade, 0.0f, 1.0f) * 255.0f);
                             bakedData[index + 1] = (uint8_t)(std::clamp(col.g * shade, 0.0f, 1.0f) * 255.0f);
                             bakedData[index + 2] = (uint8_t)(std::clamp(col.b * shade, 0.0f, 1.0f) * 255.0f);
