@@ -974,18 +974,20 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                             int arrZ    = dz + MAP_DATA_RADIUS;
 
                             if (prevCave && caveScanPhase == CaveScanPhase::SeedAirColumns) {
-                                // 小地图当前可见 101x101 扩展到正负 20 格，其余全图保留三层初筛。
+                                // 全图统一按正负 20 格找空气种子，避免小地图可见边界出现硬分界。
                                 bool hasAirSeed = false;
                                 if (isChunkLoaded(targetX, targetZ)) {
                                     try {
-                                        bool isVisibleColumn = std::abs(targetX - px) <= 50 && std::abs(targetZ - pz) <= 50;
-                                        int seedRange = isVisibleColumn ? 20 : 1;
-                                        for (int offset = -seedRange; offset <= seedRange; ++offset) {
-                                            int candidateY = currentScanY + offset;
-                                            if (candidateY >= -64 && candidateY <= 319 &&
-                                                region.getBlock(BlockPos(targetX, candidateY, targetZ)).isAir()) {
-                                                hasAirSeed = true;
-                                                break;
+                                        for (int distance = 0; distance <= 20 && !hasAirSeed; ++distance) {
+                                            int offsets[2] = {-distance, distance};
+                                            int offsetCount = distance == 0 ? 1 : 2;
+                                            for (int i = 0; i < offsetCount; ++i) {
+                                                int candidateY = currentScanY + offsets[i];
+                                                if (candidateY < -64 || candidateY > 319) continue;
+                                                if (region.getBlock(BlockPos(targetX, candidateY, targetZ)).isAir()) {
+                                                    hasAirSeed = true;
+                                                    break;
+                                                }
                                             }
                                         }
                                     } catch (...) {
