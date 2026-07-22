@@ -1071,11 +1071,17 @@ namespace DX11Hook {
 
     inline std::atomic<bool> g_textureBaking{false};
     inline std::atomic<bool> g_textureReadyToUpload{false};
+    inline std::atomic<bool> g_partialTextureBaking{false};
+    inline std::atomic<bool> g_partialTextureReadyToUpload{false};
+    inline int g_partialTextureLeft = 0;
+    inline int g_partialTextureTop = 0;
+    inline int g_partialTextureRight = 0;
+    inline int g_partialTextureBottom = 0;
 
     inline void UpdateMapTexture() {
         if (!g_pd3dDeviceContext || !g_mapTexture) return;
 
-        if (g_mapDataUpdated.load() && !g_textureBaking.load()) {
+        if (g_mapDataUpdated.load() && !g_textureBaking.load() && !g_partialTextureBaking.load()) {
             g_textureBaking.store(true);
             g_mapDataUpdated.store(false);
 
@@ -1086,6 +1092,7 @@ namespace DX11Hook {
                 static float localBrightness[MAP_DATA_SIZE][MAP_DATA_SIZE];
                 float centerX, centerZ;
                 bool useCaveLighting;
+                unsigned long long dataGeneration;
                 {
                     std::lock_guard<std::mutex> lock(g_mapDataMutex);
                     std::memcpy(localColors, g_mapColors, sizeof(localColors));
@@ -1095,6 +1102,7 @@ namespace DX11Hook {
                     centerX = g_lastRenderX;
                     centerZ = g_lastRenderZ;
                     useCaveLighting = MapRenderState::caveMode;
+                    dataGeneration = g_mapDataGeneration.load();
                 }
 
                 static uint8_t bakedData[MAP_DATA_SIZE * MAP_DATA_SIZE * 4];
@@ -1135,12 +1143,148 @@ namespace DX11Hook {
 
                 {
                     std::lock_guard<std::mutex> lock(g_mapDataMutex);
-                    std::memcpy(g_textureData, bakedData, sizeof(bakedData));
-                    g_textureCenterX = centerX;
-                    g_textureCenterZ = centerZ;
-                    g_textureReadyToUpload.store(true);
+                    if (g_mapDataGeneration.load() == dataGeneration) {
+                        std::memcpy(g_textureData, bakedData, sizeof(bakedData));
+                        g_textureCenterX = centerX;
+                        g_textureCenterZ = centerZ;
+                        g_textureReadyToUpload.store(true);
+                    }
                 }
                 g_textureBaking.store(false);
+            }).detach();
+        }
+
+        if (g_caveLightRefreshReady.load() && !MapRenderState::caveMode) {
+            g_caveLightRefreshReady.store(false);
+        }
+
+        if (g_caveLightRefreshReady.load() && !g_mapDataUpdated.load() &&
+            !g_textureBaking.load() && !g_partialTextureBaking.load()) {
+            int left, top, right, bottom;
+            int expandedLeft, expandedTop, expandedRight, expandedBottom;
+            std::vector<mce::Color> localColors;
+            std::vector<float> localHeights;
+            std::vector<float> localBrightness;
+            bool useCaveLighting = false;
+            bool startPartialBake = false;
+            unsigned long long dataGeneration = 0;
+
+            {
+                std::lock_guard<std::mutex> lock(g_mapDataMutex);
+                if (!g_caveLightRefreshReady.load() || !MapRenderState::caveMode) {
+                    g_caveLightRefreshReady.store(false);
+                } else {
+
+                    left = std::clamp(g_caveLightRefreshLeft, 0, MAP_DATA_SIZE - 1);
+                    top = std::clamp(g_caveLightRefreshTop, 0, MAP_DATA_SIZE - 1);
+                    right = std::clamp(g_caveLightRefreshRight, left + 1, MAP_DATA_SIZE);
+                    bottom = std::clamp(g_caveLightRefreshBottom, top + 1, MAP_DATA_SIZE);
+                    expandedLeft = std::max(0, left - 1);
+                    expandedTop = std::max(0, top - 1);
+                    expandedRight = right;
+                    expandedBottom = bottom;
+                    int expandedWidth = expandedRight - expandedLeft;
+                    int expandedHeight = expandedBottom - expandedTop;
+                    localColors.resize(expandedWidth * expandedHeight);
+                    localHeights.resize(expandedWidth * expandedHeight);
+                    localBrightness.resize(expandedWidth * expandedHeight);
+                    for (int z = expandedTop; z < expandedBottom; ++z) {
+                        for (int x = expandedLeft; x < expandedRight; ++x) {
+                            int localIndex = (z - expandedTop) * expandedWidth + x - expandedLeft;
+                            localColors[localIndex] = g_mapColors[x][z];
+                            localHeights[localIndex] = g_mapHeights[x][z];
+                            localBrightness[localIndex] = g_mapBrightness[x][z];
+                        }
+                    }
+                    useCaveLighting = MapRenderState::caveMode;
+                    dataGeneration = g_mapDataGeneration.load();
+                    g_caveLightRefreshReady.store(false);
+                    g_partialTextureBaking.store(true);
+                    startPartialBake = true;
+                }
+            }
+
+            if (startPartialBake) std::thread([
+                left,
+                top,
+                right,
+                bottom,
+                expandedLeft,
+                expandedTop,
+                expandedRight,
+                expandedBottom,
+                useCaveLighting,
+                dataGeneration,
+                localColors = std::move(localColors),
+                localHeights = std::move(localHeights),
+                localBrightness = std::move(localBrightness)
+            ]() mutable {
+                try {
+                    int width = right - left;
+                    int height = bottom - top;
+                    int expandedWidth = expandedRight - expandedLeft;
+                    std::vector<uint8_t> bakedData(width * height * 4);
+
+                    for (int z = top; z < bottom; ++z) {
+                        for (int x = left; x < right; ++x) {
+                            int sourceIndex = (z - expandedTop) * expandedWidth + x - expandedLeft;
+                            int targetIndex = ((z - top) * width + x - left) * 4;
+                            mce::Color col = localColors[sourceIndex];
+
+                            if (useCaveLighting && localBrightness[sourceIndex] < 0.0f) {
+                                bakedData[targetIndex] = bakedData[targetIndex + 1] = bakedData[targetIndex + 2] = 0;
+                                bakedData[targetIndex + 3] = 255;
+                                continue;
+                            }
+                            if (col.a <= 0.01f) {
+                                bakedData[targetIndex] = bakedData[targetIndex + 1] = bakedData[targetIndex + 2] = bakedData[targetIndex + 3] = 0;
+                                continue;
+                            }
+
+                            float currentY = localHeights[sourceIndex];
+                            float northY = currentY;
+                            float westY = currentY;
+                            if (z > expandedTop) {
+                                int northIndex = sourceIndex - expandedWidth;
+                                bool northIsFloor = localColors[northIndex].a > 0.01f &&
+                                    (!useCaveLighting || localBrightness[northIndex] >= 0.0f);
+                                if (northIsFloor && std::abs(currentY - localHeights[northIndex]) < 64.0f) northY = localHeights[northIndex];
+                            }
+                            if (x > expandedLeft) {
+                                int westIndex = sourceIndex - 1;
+                                bool westIsFloor = localColors[westIndex].a > 0.01f &&
+                                    (!useCaveLighting || localBrightness[westIndex] >= 0.0f);
+                                if (westIsFloor && std::abs(currentY - localHeights[westIndex]) < 64.0f) westY = localHeights[westIndex];
+                            }
+
+                            float diff = (currentY - northY) * 0.15f + (currentY - westY) * 0.15f;
+                            float shade = std::clamp(1.0f + diff, 0.65f, 1.25f);
+                            if (useCaveLighting) {
+                                float light = std::clamp(localBrightness[sourceIndex], 0.0f, 1.0f);
+                                shade *= 0.20f + 0.80f * light;
+                            }
+                            bakedData[targetIndex] = (uint8_t)(std::clamp(col.r * shade, 0.0f, 1.0f) * 255.0f);
+                            bakedData[targetIndex + 1] = (uint8_t)(std::clamp(col.g * shade, 0.0f, 1.0f) * 255.0f);
+                            bakedData[targetIndex + 2] = (uint8_t)(std::clamp(col.b * shade, 0.0f, 1.0f) * 255.0f);
+                            bakedData[targetIndex + 3] = (uint8_t)(col.a * 255.0f);
+                        }
+                    }
+
+                    std::lock_guard<std::mutex> lock(g_mapDataMutex);
+                    if (g_mapDataGeneration.load() == dataGeneration) {
+                        for (int z = 0; z < height; ++z) {
+                            uint8_t* destination = g_textureData + ((top + z) * MAP_DATA_SIZE + left) * 4;
+                            std::memcpy(destination, bakedData.data() + z * width * 4, width * 4);
+                        }
+                        g_partialTextureLeft = left;
+                        g_partialTextureTop = top;
+                        g_partialTextureRight = right;
+                        g_partialTextureBottom = bottom;
+                        g_partialTextureReadyToUpload.store(true);
+                    }
+                } catch (...) {
+                }
+                g_partialTextureBaking.store(false);
             }).detach();
         }
 
@@ -1148,6 +1292,20 @@ namespace DX11Hook {
             std::lock_guard<std::mutex> lock(g_mapDataMutex);
             g_pd3dDeviceContext->UpdateSubresource(g_mapTexture, 0, NULL, g_textureData, MAP_DATA_SIZE * 4, 0);
             g_textureReadyToUpload.store(false);
+        }
+
+        if (g_partialTextureReadyToUpload.load()) {
+            std::lock_guard<std::mutex> lock(g_mapDataMutex);
+            D3D11_BOX box = {};
+            box.left = g_partialTextureLeft;
+            box.top = g_partialTextureTop;
+            box.front = 0;
+            box.right = g_partialTextureRight;
+            box.bottom = g_partialTextureBottom;
+            box.back = 1;
+            uint8_t* source = g_textureData + (g_partialTextureTop * MAP_DATA_SIZE + g_partialTextureLeft) * 4;
+            g_pd3dDeviceContext->UpdateSubresource(g_mapTexture, 0, &box, source, MAP_DATA_SIZE * 4, 0);
+            g_partialTextureReadyToUpload.store(false);
         }
     }
 

@@ -88,6 +88,7 @@ extern std::vector<RadarEntity> g_radarEntities;
 extern std::unordered_map<std::string, PlayerSkinHead> g_playerSkinHeads; // keyed by UUID
 extern std::mutex g_playerSkinMutex;
 inline std::atomic<bool> g_mapDataUpdated{true};
+inline std::atomic<unsigned long long> g_mapDataGeneration{0};
 
 // 前台缓冲（仅供显卡渲染读取，绝不闪烁）
 extern mce::Color g_mapColors[MAP_DATA_SIZE][MAP_DATA_SIZE];
@@ -95,12 +96,15 @@ extern float g_mapHeights[MAP_DATA_SIZE][MAP_DATA_SIZE];
 inline bool g_mapWaterFlags[MAP_DATA_SIZE][MAP_DATA_SIZE] = {};
 // 洞穴通道光照；负值表示墙体或未加载区域，渲染时保持纯黑。
 inline float g_mapBrightness[MAP_DATA_SIZE][MAP_DATA_SIZE] = {};
+// 洞穴通道空气格的高度，用于在不重扫地形时刷新真实光照。
+inline int g_mapChannelHeights[MAP_DATA_SIZE][MAP_DATA_SIZE] = {};
 
 // 后台缓冲（供 CPU 高速扫描写入）
 inline mce::Color g_mapColorsBack[MAP_DATA_SIZE][MAP_DATA_SIZE];
 inline float g_mapHeightsBack[MAP_DATA_SIZE][MAP_DATA_SIZE];
 inline bool g_mapWaterFlagsBack[MAP_DATA_SIZE][MAP_DATA_SIZE] = {};
 inline float g_mapBrightnessBack[MAP_DATA_SIZE][MAP_DATA_SIZE] = {};
+inline int g_mapChannelHeightsBack[MAP_DATA_SIZE][MAP_DATA_SIZE] = {};
 
 // 记录最后一次生成贴图时的绝对中心坐标
 inline int g_lastRenderX = 0;

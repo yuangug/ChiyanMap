@@ -148,6 +148,12 @@ extern int g_playerBlockZ;
 
 // 数据并发锁，消灭画面撕裂
 inline std::mutex g_mapDataMutex;
+// 游戏线程完成一轮洞穴局部光照采样后，由 DX11 线程只重烘焙对应纹理矩形。
+inline std::atomic<bool> g_caveLightRefreshReady{false};
+inline int g_caveLightRefreshLeft = 0;
+inline int g_caveLightRefreshTop = 0;
+inline int g_caveLightRefreshRight = 0;
+inline int g_caveLightRefreshBottom = 0;
 
 // ==========================================
 // 生物群系中文翻译字典引擎
@@ -663,10 +669,12 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                 std::memset(g_mapColors, 0, sizeof(g_mapColors));
                 std::memset(g_mapWaterFlags, 0, sizeof(g_mapWaterFlags));
                 std::memset(g_mapBrightness, 0, sizeof(g_mapBrightness));
+                std::memset(g_mapChannelHeights, 0, sizeof(g_mapChannelHeights));
                 std::memset(g_mapHeightsBack, 0, sizeof(g_mapHeightsBack));
                 std::memset(g_mapColorsBack, 0, sizeof(g_mapColorsBack));
                 std::memset(g_mapWaterFlagsBack, 0, sizeof(g_mapWaterFlagsBack));
                 std::memset(g_mapBrightnessBack, 0, sizeof(g_mapBrightnessBack));
+                std::memset(g_mapChannelHeightsBack, 0, sizeof(g_mapChannelHeightsBack));
                 
                 // 下界自动洞穴模式
                 if (dimId == 1) {
@@ -683,6 +691,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                 g_lastRenderZ = g_playerBlockZ;
                 
                 MapRenderState::clearGPUCache.store(true); 
+                g_mapDataGeneration.fetch_add(1);
                 g_mapDataUpdated.store(true);
             }
         } catch(...) {}
@@ -804,6 +813,11 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
         static int caveChunkBaseX = 0;
         static int caveChunkBaseZ = 0;
         static int caveDetectionTicks = 0;
+        static bool caveLightRefreshActive = false;
+        static int caveLightRefreshIndex = 0;
+        static int caveLightRefreshLeft = 0;
+        static int caveLightRefreshTop = 0;
+        static int caveLightRefreshCooldown = 0;
 
         int px = g_playerBlockX;
         int pz = g_playerBlockZ;
@@ -832,8 +846,10 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                     std::lock_guard<std::mutex> lock(g_mapDataMutex);
                     MapCacheManager::PreloadScanBuffer(px, pz, g_mapColors, g_mapHeights, true);
                     std::fill(&g_mapBrightness[0][0], &g_mapBrightness[0][0] + MAP_DATA_SIZE * MAP_DATA_SIZE, 1.0f);
+                    std::memset(g_mapChannelHeights, 0, sizeof(g_mapChannelHeights));
                     g_lastRenderX = px;
                     g_lastRenderZ = pz;
+                    g_mapDataGeneration.fetch_add(1);
                     g_mapDataUpdated.store(true);
                 }
             }
@@ -863,6 +879,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                 std::memset(g_mapHeightsBack, 0, sizeof(g_mapHeightsBack));
                 std::memset(g_mapWaterFlagsBack, 0, sizeof(g_mapWaterFlagsBack));
                 std::fill(&g_mapBrightnessBack[0][0], &g_mapBrightnessBack[0][0] + MAP_DATA_SIZE * MAP_DATA_SIZE, prevCave ? -1.0f : 1.0f);
+                std::memset(g_mapChannelHeightsBack, 0, sizeof(g_mapChannelHeightsBack));
                 if (!prevCave) {
                     MapCacheManager::PreloadScanBuffer(currentScanX, currentScanZ, g_mapColorsBack, g_mapHeightsBack);
                 }
@@ -872,6 +889,8 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
             caveScanPhase = CaveScanPhase::SeedAirColumns;
             caveChunkBaseX = (currentScanX - MAP_DATA_RADIUS) >> 4;
             caveChunkBaseZ = (currentScanZ - MAP_DATA_RADIUS) >> 4;
+            caveLightRefreshActive = false;
+            g_caveLightRefreshReady.store(false);
             isScanning = true;
             currentRow = -MAP_DATA_RADIUS;
             currentCol = -MAP_DATA_RADIUS;
@@ -938,13 +957,13 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                                 // 阶段二：只解析命中的空气列，按与玩家高度的距离选择可见通道。
                                 mce::Color caveColor(0, 0, 0, 1);
                                 int floorY = currentScanY;
+                                int channelY = currentScanY;
                                 float brightness = -1.0f;
                                 bool isWaterCell = false;
 
                                 if (caveSeedColumns[arrX][arrZ] && isChunkLoaded(targetX, targetZ)) {
                                     try {
                                         static constexpr int kChannelOffsets[] = {0, -1, 1, -2, 2, -3, 3, -4, 4, -5, -6, -7, -8};
-                                        int channelY = currentScanY;
                                         bool foundChannel = false;
                                         for (int offset : kChannelOffsets) {
                                             int candidateY = currentScanY + offset;
@@ -1019,6 +1038,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                                 g_mapHeightsBack[arrX][arrZ] = (float)floorY;
                                 g_mapWaterFlagsBack[arrX][arrZ] = isWaterCell;
                                 g_mapBrightnessBack[arrX][arrZ] = brightness;
+                                g_mapChannelHeightsBack[arrX][arrZ] = channelY;
                             } else {
                                 // === 地表模式：现有扫描逻辑 ===
                                 short topY = region.getAboveTopSolidBlock(targetX, targetZ, true, true);
@@ -1133,9 +1153,19 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                             std::memcpy(g_mapColors, g_mapColorsBack, sizeof(g_mapColors));
                             std::memcpy(g_mapWaterFlags, g_mapWaterFlagsBack, sizeof(g_mapWaterFlags));
                             std::memcpy(g_mapBrightness, g_mapBrightnessBack, sizeof(g_mapBrightness));
+                            std::memcpy(g_mapChannelHeights, g_mapChannelHeightsBack, sizeof(g_mapChannelHeights));
                             g_lastRenderX = currentScanX;
                             g_lastRenderZ = currentScanZ;
+                            g_mapDataGeneration.fetch_add(1);
                             g_mapDataUpdated.store(true);
+                        }
+
+                        if (prevCave) {
+                            caveLightRefreshActive = false;
+                            caveLightRefreshIndex = 0;
+                            caveLightRefreshCooldown = 0;
+                            caveLightRefreshLeft = MAP_DATA_RADIUS - 50;
+                            caveLightRefreshTop = MAP_DATA_RADIUS - 50;
                         }
 
                         if (!prevCave) {
@@ -1161,6 +1191,109 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                     }
                 }
             } catch (...) {}
+        }
+
+        // 完整洞穴扫描后，只在当前小地图可见的 101x101 区域轮询真实光照。
+        // 每 tick 最多读取 512 格，整轮完成后才请求一次局部纹理重烘焙。
+        if (isScanning || !prevCave || !MapRenderState::caveMode) {
+            caveLightRefreshActive = false;
+        } else {
+            if (!caveLightRefreshActive && !g_caveLightRefreshReady.load()) {
+                if (caveLightRefreshCooldown > 0) {
+                    --caveLightRefreshCooldown;
+                } else {
+                    std::lock_guard<std::mutex> lock(g_mapDataMutex);
+                    int playerOffsetX = px - g_lastRenderX;
+                    int playerOffsetZ = pz - g_lastRenderZ;
+                    caveLightRefreshLeft = std::clamp(MAP_DATA_RADIUS + playerOffsetX - 50, 0, MAP_DATA_SIZE - 101);
+                    caveLightRefreshTop = std::clamp(MAP_DATA_RADIUS + playerOffsetZ - 50, 0, MAP_DATA_SIZE - 101);
+                    caveLightRefreshIndex = 0;
+                    caveLightRefreshActive = true;
+                }
+            }
+
+            if (caveLightRefreshActive) {
+                struct CaveLightSample {
+                    int mapX;
+                    int mapZ;
+                    int worldX;
+                    int worldZ;
+                    int channelY;
+                };
+
+                constexpr int kLightSamplesPerTick = 512;
+                constexpr int kVisibleLightSize = 101;
+                std::vector<CaveLightSample> samples;
+                samples.reserve(kLightSamplesPerTick);
+                int refreshCenterX = 0;
+                int refreshCenterZ = 0;
+
+                {
+                    std::lock_guard<std::mutex> lock(g_mapDataMutex);
+                    refreshCenterX = g_lastRenderX;
+                    refreshCenterZ = g_lastRenderZ;
+                    int samplesThisTick = std::min(kLightSamplesPerTick, kVisibleLightSize * kVisibleLightSize - caveLightRefreshIndex);
+                    for (int i = 0; i < samplesThisTick; ++i) {
+                        int sequence = caveLightRefreshIndex++;
+                        int mapX = caveLightRefreshLeft + sequence % kVisibleLightSize;
+                        int mapZ = caveLightRefreshTop + sequence / kVisibleLightSize;
+                        if (g_mapBrightness[mapX][mapZ] < 0.0f) continue;
+                        samples.push_back({
+                            mapX,
+                            mapZ,
+                            refreshCenterX + mapX - MAP_DATA_RADIUS,
+                            refreshCenterZ + mapZ - MAP_DATA_RADIUS,
+                            g_mapChannelHeights[mapX][mapZ]
+                        });
+                    }
+                }
+
+                if (BlockSource* region = clientInstance->getRegion()) {
+                    struct CaveLightResult {
+                        int mapX;
+                        int mapZ;
+                        float brightness;
+                    };
+                    std::vector<CaveLightResult> results;
+                    results.reserve(samples.size());
+                    for (auto const& sample : samples) {
+                        try {
+                            BlockPos channelPos(sample.worldX, sample.channelY, sample.worldZ);
+                            if (!region->hasChunksAt(channelPos, 0, false) || !region->getBlock(channelPos).isAir()) continue;
+                            float light = std::clamp(
+                                std::max(region->getBrightness(channelPos), region->getSkylightBrightness(channelPos) / 15.0f),
+                                0.0f,
+                                1.0f
+                            );
+                            results.push_back({sample.mapX, sample.mapZ, light});
+                        } catch (...) {}
+                    }
+
+                    std::lock_guard<std::mutex> lock(g_mapDataMutex);
+                    if (MapRenderState::caveMode &&
+                        g_lastRenderX == refreshCenterX && g_lastRenderZ == refreshCenterZ) {
+                        for (auto const& result : results) {
+                            if (g_mapBrightness[result.mapX][result.mapZ] >= 0.0f) {
+                                g_mapBrightness[result.mapX][result.mapZ] = result.brightness;
+                            }
+                        }
+                    }
+                }
+
+                if (caveLightRefreshIndex >= kVisibleLightSize * kVisibleLightSize) {
+                    std::lock_guard<std::mutex> lock(g_mapDataMutex);
+                    if (MapRenderState::caveMode &&
+                        g_lastRenderX == refreshCenterX && g_lastRenderZ == refreshCenterZ) {
+                        g_caveLightRefreshLeft = caveLightRefreshLeft;
+                        g_caveLightRefreshTop = caveLightRefreshTop;
+                        g_caveLightRefreshRight = caveLightRefreshLeft + kVisibleLightSize;
+                        g_caveLightRefreshBottom = caveLightRefreshTop + kVisibleLightSize;
+                        g_caveLightRefreshReady.store(true);
+                    }
+                    caveLightRefreshActive = false;
+                    caveLightRefreshCooldown = 5;
+                }
+            }
         }
 
         static int entityDelay = 0;
