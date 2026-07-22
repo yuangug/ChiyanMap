@@ -496,20 +496,56 @@ inline mce::Color getBlockColor(std::string const& name, mce::Color grassCol, mc
     return mce::Color(r, g, b, 1.0f);
 }
 
-// 自动检测玩家是否在地下（头顶 20 格内有实体方块）
+// 自动检测玩家是否在地下：顶棚、下方地板和天空光共同避免大型封闭洞室误判为地表。
 inline bool IsPlayerUnderground(BlockSource* region, int px, int py, int pz) {
     if (!region) return false;
-    int hits = 0;
+    constexpr int kVerticalRange = 20;
+    constexpr int kMinWorldY = -64;
+    constexpr int kMaxWorldY = 319;
+    constexpr int kLowSkyLight = 1;
+    int enclosedColumns = 0;
     int offsets[5][2] = {{0,0}, {1,0}, {-1,0}, {0,1}, {0,-1}};
+
+    auto isStructuralBlock = [](Block const& block) {
+        if (block.isAir()) return false;
+        std::string name = block.getTypeName();
+        return name.find("water") == std::string::npos &&
+            name.find("leaves") == std::string::npos &&
+            name.find("log") == std::string::npos;
+    };
+
     for (auto& off : offsets) {
-        for (int y = py + 2; y <= py + 22 && y < 319; y++) {
-            try {
-                auto name = region->getBlock(BlockPos(px + off[0], y, pz + off[1])).getTypeName();
-                if (name != "minecraft:air" && name != "air" && name.find("water") == std::string::npos && name.find("leaves") == std::string::npos && name.find("log") == std::string::npos) { hits++; break; }
-            } catch (...) { break; }
+        int sampleX = px + off[0];
+        int sampleZ = pz + off[1];
+        bool hasCeiling = false;
+        bool hasFloor = false;
+        int skyLight = 15;
+
+        try {
+            BlockPos lightPos(sampleX, std::clamp(py + 1, kMinWorldY, kMaxWorldY), sampleZ);
+            if (!region->hasChunksAt(lightPos, 0, false)) continue;
+            skyLight = region->getSkylightBrightness(lightPos);
+
+            for (int distance = 1; distance <= kVerticalRange && (!hasCeiling || !hasFloor); ++distance) {
+                int upperY = py + distance;
+                if (!hasCeiling && upperY <= kMaxWorldY &&
+                    isStructuralBlock(region->getBlock(BlockPos(sampleX, upperY, sampleZ)))) {
+                    hasCeiling = true;
+                }
+
+                int lowerY = py - distance;
+                if (!hasFloor && lowerY >= kMinWorldY &&
+                    isStructuralBlock(region->getBlock(BlockPos(sampleX, lowerY, sampleZ)))) {
+                    hasFloor = true;
+                }
+            }
+        } catch (...) {
+            continue;
         }
+
+        if (hasCeiling || (hasFloor && skyLight <= kLowSkyLight)) ++enclosedColumns;
     }
-    return hits >= 3;
+    return enclosedColumns >= 3;
 }
 
 inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isInitFinished) {
@@ -938,12 +974,16 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                             int arrZ    = dz + MAP_DATA_RADIUS;
 
                             if (prevCave && caveScanPhase == CaveScanPhase::SeedAirColumns) {
-                                // 阶段一：仅检查玩家高度附近三层，未加载区直接作为黑墙保留。
+                                // 小地图当前可见 101x101 扩展到正负 20 格，其余全图保留三层初筛。
                                 bool hasAirSeed = false;
                                 if (isChunkLoaded(targetX, targetZ)) {
                                     try {
-                                        for (int offset = -1; offset <= 1; ++offset) {
-                                            if (region.getBlock(BlockPos(targetX, currentScanY + offset, targetZ)).isAir()) {
+                                        bool isVisibleColumn = std::abs(targetX - px) <= 50 && std::abs(targetZ - pz) <= 50;
+                                        int seedRange = isVisibleColumn ? 20 : 1;
+                                        for (int offset = -seedRange; offset <= seedRange; ++offset) {
+                                            int candidateY = currentScanY + offset;
+                                            if (candidateY >= -64 && candidateY <= 319 &&
+                                                region.getBlock(BlockPos(targetX, candidateY, targetZ)).isAir()) {
                                                 hasAirSeed = true;
                                                 break;
                                             }
@@ -963,14 +1003,18 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
 
                                 if (caveSeedColumns[arrX][arrZ] && isChunkLoaded(targetX, targetZ)) {
                                     try {
-                                        static constexpr int kChannelOffsets[] = {0, -1, 1, -2, 2, -3, 3, -4, 4, -5, -6, -7, -8};
                                         bool foundChannel = false;
-                                        for (int offset : kChannelOffsets) {
-                                            int candidateY = currentScanY + offset;
-                                            if (region.getBlock(BlockPos(targetX, candidateY, targetZ)).isAir()) {
-                                                channelY = candidateY;
-                                                foundChannel = true;
-                                                break;
+                                        for (int distance = 0; distance <= 20 && !foundChannel; ++distance) {
+                                            int offsets[2] = {-distance, distance};
+                                            int offsetCount = distance == 0 ? 1 : 2;
+                                            for (int i = 0; i < offsetCount; ++i) {
+                                                int candidateY = currentScanY + offsets[i];
+                                                if (candidateY < -64 || candidateY > 319) continue;
+                                                if (region.getBlock(BlockPos(targetX, candidateY, targetZ)).isAir()) {
+                                                    channelY = candidateY;
+                                                    foundChannel = true;
+                                                    break;
+                                                }
                                             }
                                         }
 
@@ -983,8 +1027,9 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                                             );
 
                                             bool foundFloor = false;
-                                            for (int drop = 1; drop <= 16; ++drop) {
+                                            for (int drop = 1; drop <= 64; ++drop) {
                                                 int candidateY = channelY - drop;
+                                                if (candidateY < -64) break;
                                                 Block const& floorBlock = region.getBlock(BlockPos(targetX, candidateY, targetZ));
                                                 if (floorBlock.isAir()) continue;
 
@@ -1023,8 +1068,8 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                                             }
 
                                             if (!foundFloor) {
-                                                // 有空气但 16 格内没有地板，保留为低亮度深洞而不是泄露地表颜色。
-                                                floorY = channelY - 16;
+                                                // 有空气但 64 格内没有地板，保留为低亮度深洞而不是泄露地表颜色。
+                                                floorY = std::max(channelY - 64, -64);
                                                 caveColor = mce::Color(0.08f, 0.08f, 0.08f, 1.0f);
                                             }
                                         }

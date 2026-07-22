@@ -49,7 +49,7 @@ namespace MapRenderState {
     inline bool isSquareMap = false; // 是否为方形小地图
     inline bool caveMode = false; // 洞穴模式（自动检测）
     inline int caveScanY = 0;     // 当前洞穴扫描的 Y 层
-    inline int caveRange = 3;     // 玩家 Y 上下检查范围
+    inline int caveRange = 20;    // 玩家 Y 上下检查范围
     inline std::chrono::steady_clock::time_point worldSwitchTime = std::chrono::steady_clock::now();
     inline float minimapSize = 135.0f; // 小地图半径(像素)
     inline float minimapOffsetX = 1e9f;  // 小地图X偏移（默认右上角：饱和到右侧边界，0 值仍为屏幕中心）
