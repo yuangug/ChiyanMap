@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <algorithm>
 #include <cstring>
 #include <windows.h>
 #include <ll/api/memory/Hook.h>
@@ -661,9 +662,11 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                 std::memset(g_mapHeights, 0, sizeof(g_mapHeights));
                 std::memset(g_mapColors, 0, sizeof(g_mapColors));
                 std::memset(g_mapWaterFlags, 0, sizeof(g_mapWaterFlags));
+                std::memset(g_mapBrightness, 0, sizeof(g_mapBrightness));
                 std::memset(g_mapHeightsBack, 0, sizeof(g_mapHeightsBack));
                 std::memset(g_mapColorsBack, 0, sizeof(g_mapColorsBack));
                 std::memset(g_mapWaterFlagsBack, 0, sizeof(g_mapWaterFlagsBack));
+                std::memset(g_mapBrightnessBack, 0, sizeof(g_mapBrightnessBack));
                 
                 // 下界自动洞穴模式
                 if (dimId == 1) {
@@ -787,80 +790,91 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
 
         static int currentScanX  = -99999;
         static int currentScanZ  = -99999;
+        static int currentScanY  = -99999;
         static bool isScanning   = false;
         static int  currentRow   = -MAP_DATA_RADIUS;
         static int  currentCol   = -MAP_DATA_RADIUS;
-        static int  ticksSinceScan = 0; 
+        static int  ticksSinceScan = 0;
         static bool prevCave     = false;
+        enum class CaveScanPhase { SeedAirColumns, ResolveColumns };
+        static CaveScanPhase caveScanPhase = CaveScanPhase::SeedAirColumns;
+        static bool caveSeedColumns[MAP_DATA_SIZE][MAP_DATA_SIZE] = {};
+        static constexpr int kCaveChunkGridSize = MAP_DATA_SIZE / 16 + 2;
+        static signed char caveChunkLoadStates[kCaveChunkGridSize][kCaveChunkGridSize] = {};
+        static int caveChunkBaseX = 0;
+        static int caveChunkBaseZ = 0;
+        static int caveDetectionTicks = 0;
 
         int px = g_playerBlockX;
         int pz = g_playerBlockZ;
+        int py = (int)std::floor(g_playerY);
         ticksSinceScan++;
 
-        if (!isScanning && (std::abs(px - currentScanX) >= 16 || std::abs(pz - currentScanZ) >= 16 || ticksSinceScan > 100)) {
-            currentScanX  = px;
-            currentScanZ  = pz;
-            ticksSinceScan = 0;
-            
-            // 自动检测洞穴模式
-            prevCave = MapRenderState::caveMode;
+        // 洞穴判断不参与逐列扫描。扫描期间每 10 tick 复查一次，发现模式变化立刻废弃旧任务。
+        if (!isScanning || ++caveDetectionTicks >= 10) {
+            caveDetectionTicks = 0;
+            bool detectedCave = false;
             if (MapRenderState::currentDimensionId == 1) {
-                MapRenderState::caveMode = true;
+                detectedCave = true;
             } else {
-                auto* rp = clientInstance->getRegion();
-                bool detectedCave = rp ? IsPlayerUnderground(rp, px, (int)g_playerY, pz) : false;
+                auto* region = clientInstance->getRegion();
+                detectedCave = region ? IsPlayerUnderground(region, px, py, pz) : false;
                 auto sinceWorldSwitch = std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::steady_clock::now() - MapRenderState::worldSwitchTime
                 ).count();
-                if (sinceWorldSwitch < 6) {
-                    detectedCave = false;
-                }
-                MapRenderState::caveMode = detectedCave;
+                if (sinceWorldSwitch < 6) detectedCave = false;
             }
-            if (MapRenderState::caveMode != prevCave) {
-                std::memset(g_mapColorsBack, 0, sizeof(g_mapColorsBack));
-                std::memset(g_mapHeightsBack, 0, sizeof(g_mapHeightsBack));
-                std::memset(g_mapWaterFlagsBack, 0, sizeof(g_mapWaterFlagsBack));
-                if (MapRenderState::caveMode) {
-                    MapRenderState::caveScanY = (int)g_playerY;
-                } else {
-                    // 回到地表时先把磁盘里的旧地表缓存恢复出来，再继续扫描，减少空白期
-                    MapCacheManager::PreloadScanBuffer(currentScanX, currentScanZ, g_mapColors, g_mapHeights, true);
-                    g_lastRenderX = currentScanX;
-                    g_lastRenderZ = currentScanZ;
+
+            if (detectedCave != MapRenderState::caveMode) {
+                MapRenderState::caveMode = detectedCave;
+                if (!detectedCave) {
+                    // 回到地表先恢复地表缓存；扫描完成前前台纹理不会被黑色后台覆盖。
+                    std::lock_guard<std::mutex> lock(g_mapDataMutex);
+                    MapCacheManager::PreloadScanBuffer(px, pz, g_mapColors, g_mapHeights, true);
+                    std::fill(&g_mapBrightness[0][0], &g_mapBrightness[0][0] + MAP_DATA_SIZE * MAP_DATA_SIZE, 1.0f);
+                    g_lastRenderX = px;
+                    g_lastRenderZ = pz;
                     g_mapDataUpdated.store(true);
                 }
             }
-            
-            // 洞穴模式下每次扫描都更新基准高度
-            if (MapRenderState::caveMode) {
-                MapRenderState::caveScanY = (int)g_playerY;
-            }
+        }
+
+        // 位置、高度或模式改变时，扫描中的数据不再有效，下一段扫描从新的任务参数重新开始。
+        if (isScanning &&
+            (std::abs(px - currentScanX) >= 16 || std::abs(pz - currentScanZ) >= 16 ||
+             py != currentScanY || MapRenderState::caveMode != prevCave)) {
+            isScanning = false;
+            ticksSinceScan = 100;
+        }
+
+        if (!isScanning &&
+            (std::abs(px - currentScanX) >= 16 || std::abs(pz - currentScanZ) >= 16 ||
+             py != currentScanY || ticksSinceScan > 100)) {
+            currentScanX  = px;
+            currentScanZ  = pz;
+            currentScanY  = py;
+            ticksSinceScan = 0;
+            prevCave = MapRenderState::caveMode;
+            MapRenderState::caveScanY = currentScanY;
 
             {
                 std::lock_guard<std::mutex> lock(g_mapDataMutex);
-                // 用当前位置磁盘缓存作为后台种子，避免残留上一次整图（旧位置）数据导致地图错位
                 std::memset(g_mapColorsBack, 0, sizeof(g_mapColorsBack));
                 std::memset(g_mapHeightsBack, 0, sizeof(g_mapHeightsBack));
                 std::memset(g_mapWaterFlagsBack, 0, sizeof(g_mapWaterFlagsBack));
-                // 洞穴模式不预加载地表缓存（种子保持虚空），否则会显示地表颜色并扫描时黑闪
-                if (!MapRenderState::caveMode) {
+                std::fill(&g_mapBrightnessBack[0][0], &g_mapBrightnessBack[0][0] + MAP_DATA_SIZE * MAP_DATA_SIZE, prevCave ? -1.0f : 1.0f);
+                if (!prevCave) {
                     MapCacheManager::PreloadScanBuffer(currentScanX, currentScanZ, g_mapColorsBack, g_mapHeightsBack);
                 }
             }
-            
+            std::memset(caveSeedColumns, 0, sizeof(caveSeedColumns));
+            std::memset(caveChunkLoadStates, -1, sizeof(caveChunkLoadStates));
+            caveScanPhase = CaveScanPhase::SeedAirColumns;
+            caveChunkBaseX = (currentScanX - MAP_DATA_RADIUS) >> 4;
+            caveChunkBaseZ = (currentScanZ - MAP_DATA_RADIUS) >> 4;
             isScanning = true;
             currentRow = -MAP_DATA_RADIUS;
             currentCol = -MAP_DATA_RADIUS;
-        }
-
-        if (isScanning) {
-            // 扫描中如果模式改变，立即中止并重新触发
-            if (MapRenderState::caveMode != prevCave) {
-                isScanning = false;
-                currentScanX = -99999;
-                ticksSinceScan = 999;
-            }
         }
 
         if (isScanning) {
@@ -881,6 +895,18 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                     bool timeBudgetExceeded = false;
 
                     static std::hash<std::string> hasher;
+                    auto isChunkLoaded = [&](int x, int z) {
+                        int gridX = (x >> 4) - caveChunkBaseX;
+                        int gridZ = (z >> 4) - caveChunkBaseZ;
+                        if (gridX < 0 || gridX >= kCaveChunkGridSize || gridZ < 0 || gridZ >= kCaveChunkGridSize) {
+                            return region.hasChunksAt(BlockPos(x, currentScanY, z), 0, false);
+                        }
+                        signed char& state = caveChunkLoadStates[gridX][gridZ];
+                        if (state < 0) {
+                            state = region.hasChunksAt(BlockPos(x, currentScanY, z), 0, false) ? 1 : 0;
+                        }
+                        return state != 0;
+                    };
 
                     while (currentRow <= MAP_DATA_RADIUS && !timeBudgetExceeded) {
                         int dx = currentRow;
@@ -892,70 +918,107 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                             int targetZ = currentScanZ + dz;
                             int arrZ    = dz + MAP_DATA_RADIUS;
 
-                            if (MapRenderState::caveMode) {
-                                int csy = MapRenderState::caveScanY;
+                            if (prevCave && caveScanPhase == CaveScanPhase::SeedAirColumns) {
+                                // 阶段一：仅检查玩家高度附近三层，未加载区直接作为黑墙保留。
+                                bool hasAirSeed = false;
+                                if (isChunkLoaded(targetX, targetZ)) {
+                                    try {
+                                        for (int offset = -1; offset <= 1; ++offset) {
+                                            if (region.getBlock(BlockPos(targetX, currentScanY + offset, targetZ)).isAir()) {
+                                                hasAirSeed = true;
+                                                break;
+                                            }
+                                        }
+                                    } catch (...) {
+                                        hasAirSeed = false;
+                                    }
+                                }
+                                caveSeedColumns[arrX][arrZ] = hasAirSeed;
+                            } else if (prevCave) {
+                                // 阶段二：只解析命中的空气列，按与玩家高度的距离选择可见通道。
                                 mce::Color caveColor(0, 0, 0, 1);
-                                int floorY = csy;
+                                int floorY = currentScanY;
+                                float brightness = -1.0f;
                                 bool isWaterCell = false;
 
-                                try {
-                                    // 从 csy 向上扫描到第一个固体方块（天花板），途中发现空气即为通道
-                                    bool isAir = false;
-                                    for (int dy = 0; dy <= 64; dy++) {
-                                        std::string bn = region.getBlock(BlockPos(targetX, csy + dy, targetZ)).getTypeName();
-                                        bool solid = (bn != "minecraft:air" && bn != "air");
-                                        if (solid) break; // 碰到天花板停止
-                                        isAir = true;     // 至少有一格空气
-                                    }
+                                if (caveSeedColumns[arrX][arrZ] && isChunkLoaded(targetX, targetZ)) {
+                                    try {
+                                        static constexpr int kChannelOffsets[] = {0, -1, 1, -2, 2, -3, 3, -4, 4, -5, -6, -7, -8};
+                                        int channelY = currentScanY;
+                                        bool foundChannel = false;
+                                        for (int offset : kChannelOffsets) {
+                                            int candidateY = currentScanY + offset;
+                                            if (region.getBlock(BlockPos(targetX, candidateY, targetZ)).isAir()) {
+                                                channelY = candidateY;
+                                                foundChannel = true;
+                                                break;
+                                            }
+                                        }
 
-                                    if (isAir) {
-                                        // 空气 → 向下找地板
-                                        floorY = -64;
-                                        for (int fy = csy - 1; fy > -64; fy--) {
-                                            try {
-                                                Block const& fb = region.getBlock(BlockPos(targetX, fy, targetZ));
-                                                std::string fn = fb.getTypeName();
-                                                if (fn != "minecraft:air" && fn != "air") {
-                                                    floorY = fy;
-                                                    int cellX = targetX >> 2;
-                                                    int cellZ = targetZ >> 2;
-                                                    if (cellX != s_biomeCellX || cellZ != s_biomeCellZ) {
-                                                        s_biomeCellX = cellX; s_biomeCellZ = cellZ;
-                                                        try {
-                                                            auto const& biome = region.getBiome(BlockPos(targetX, fy, targetZ));
-                                                            std::string newBiomeName = biome.mHash->getString();
-                                                            if (s_biomeName != newBiomeName) {
-                                                                s_biomeName = newBiomeName;
-                                                                getBiomeTints(s_biomeName, s_cachedGrass, s_cachedFoliage, s_cachedWater);
-                                                            }
-                                                        } catch (...) { if (!s_biomeName.empty()) s_biomeName = ""; }
+                                        if (foundChannel) {
+                                            BlockPos channelPos(targetX, channelY, targetZ);
+                                            brightness = std::clamp(
+                                                std::max(region.getBrightness(channelPos), region.getSkylightBrightness(channelPos) / 15.0f),
+                                                0.0f,
+                                                1.0f
+                                            );
+
+                                            bool foundFloor = false;
+                                            for (int drop = 1; drop <= 16; ++drop) {
+                                                int candidateY = channelY - drop;
+                                                Block const& floorBlock = region.getBlock(BlockPos(targetX, candidateY, targetZ));
+                                                if (floorBlock.isAir()) continue;
+
+                                                foundFloor = true;
+                                                floorY = candidateY;
+                                                std::string floorName = floorBlock.getTypeName();
+                                                isWaterCell = floorName.find("water") != std::string::npos;
+                                                int cellX = targetX >> 2;
+                                                int cellZ = targetZ >> 2;
+                                                if (cellX != s_biomeCellX || cellZ != s_biomeCellZ) {
+                                                    s_biomeCellX = cellX;
+                                                    s_biomeCellZ = cellZ;
+                                                    try {
+                                                        auto const& biome = region.getBiome(BlockPos(targetX, floorY, targetZ));
+                                                        std::string newBiomeName = biome.mHash->getString();
+                                                        if (s_biomeName != newBiomeName) {
+                                                            s_biomeName = newBiomeName;
+                                                            getBiomeTints(s_biomeName, s_cachedGrass, s_cachedFoliage, s_cachedWater);
+                                                        }
+                                                    } catch (...) {
+                                                        if (!s_biomeName.empty()) s_biomeName = "";
                                                     }
-                                                    static std::unordered_map<size_t, mce::Color> s_globalColorCache;
-                                                    if (s_globalColorCache.size() > 20000) s_globalColorCache.clear();
-                                                    size_t ck = hasher(fn) ^ (hasher(s_biomeName) << 1);
-                                                    auto ci = s_globalColorCache.find(ck);
-                                                    if (ci != s_globalColorCache.end()) {
-                                                        caveColor = ci->second;
-                                                    } else {
-                                                        caveColor = getBlockColor(fn, s_cachedGrass, s_cachedFoliage, s_cachedWater);
-                                                        s_globalColorCache[ck] = caveColor;
-                                                    }
-                                                    break;
                                                 }
-                                            } catch (...) { break; }
+
+                                                static std::unordered_map<size_t, mce::Color> s_caveColorCache;
+                                                if (s_caveColorCache.size() > 20000) s_caveColorCache.clear();
+                                                size_t cacheKey = hasher(floorName) ^ (hasher(s_biomeName) << 1);
+                                                auto colorIt = s_caveColorCache.find(cacheKey);
+                                                if (colorIt != s_caveColorCache.end()) {
+                                                    caveColor = colorIt->second;
+                                                } else {
+                                                    caveColor = getBlockColor(floorName, s_cachedGrass, s_cachedFoliage, s_cachedWater);
+                                                    s_caveColorCache[cacheKey] = caveColor;
+                                                }
+                                                break;
+                                            }
+
+                                            if (!foundFloor) {
+                                                // 有空气但 16 格内没有地板，保留为低亮度深洞而不是泄露地表颜色。
+                                                floorY = channelY - 16;
+                                                caveColor = mce::Color(0.08f, 0.08f, 0.08f, 1.0f);
+                                            }
                                         }
-                                        if (floorY == -64) {
-                                            floorY = csy - 1;
-                                            caveColor = mce::Color(0.15f, 0.15f, 0.15f, 1.0f);
-                                        }
+                                    } catch (...) {
+                                        caveColor = mce::Color(0, 0, 0, 1);
+                                        brightness = -1.0f;
                                     }
-                                    // else 固体 → 墙壁，保持默认黑色 (0,0,0,1)
-                                } catch (...) {
-                                    caveColor = mce::Color(0, 0, 0, 1);
                                 }
+
                                 g_mapColorsBack[arrX][arrZ] = caveColor;
                                 g_mapHeightsBack[arrX][arrZ] = (float)floorY;
                                 g_mapWaterFlagsBack[arrX][arrZ] = isWaterCell;
+                                g_mapBrightnessBack[arrX][arrZ] = brightness;
                             } else {
                                 // === 地表模式：现有扫描逻辑 ===
                                 short topY = region.getAboveTopSolidBlock(targetX, targetZ, true, true);
@@ -1043,7 +1106,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
 
                             if ((currentCol & 63) == 0) {
                                 auto now = std::chrono::high_resolution_clock::now();
-                                int budgetMicros = MapRenderState::caveMode ? 6000 : 2500;
+                                int budgetMicros = prevCave ? 6000 : 2500;
                                 if (std::chrono::duration_cast<std::chrono::microseconds>(now - scanStartTime).count() > budgetMicros) {
                                     timeBudgetExceeded = true;
                                     break;
@@ -1057,19 +1120,25 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                         }
                     }
 
-                    if (currentRow > MAP_DATA_RADIUS) {
+                    if (prevCave && caveScanPhase == CaveScanPhase::SeedAirColumns && currentRow > MAP_DATA_RADIUS) {
+                        caveScanPhase = CaveScanPhase::ResolveColumns;
+                        currentRow = -MAP_DATA_RADIUS;
+                        currentCol = -MAP_DATA_RADIUS;
+                    } else if (currentRow > MAP_DATA_RADIUS) {
                         isScanning = false;
+                        ticksSinceScan = 0;
                         {
                             std::lock_guard<std::mutex> lock(g_mapDataMutex);
                             std::memcpy(g_mapHeights, g_mapHeightsBack, sizeof(g_mapHeights));
                             std::memcpy(g_mapColors, g_mapColorsBack, sizeof(g_mapColors));
                             std::memcpy(g_mapWaterFlags, g_mapWaterFlagsBack, sizeof(g_mapWaterFlags));
+                            std::memcpy(g_mapBrightness, g_mapBrightnessBack, sizeof(g_mapBrightness));
                             g_lastRenderX = currentScanX;
                             g_lastRenderZ = currentScanZ;
                             g_mapDataUpdated.store(true);
                         }
 
-                        {
+                        if (!prevCave) {
                             using ColorGrid = mce::Color[MAP_DATA_SIZE][MAP_DATA_SIZE];
                             using HeightGrid = float[MAP_DATA_SIZE][MAP_DATA_SIZE];
                             using WaterGrid = bool[MAP_DATA_SIZE][MAP_DATA_SIZE];
@@ -1081,10 +1150,9 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                             std::memcpy(asyncWaterFlags, g_mapWaterFlagsBack, sizeof(g_mapWaterFlagsBack));
                             int asyncX = currentScanX;
                             int asyncZ = currentScanZ;
-                            bool cave = MapRenderState::caveMode;
 
-                            std::thread([asyncX, asyncZ, asyncColors, asyncHeights, asyncWaterFlags, cave]() {
-                                MapCacheManager::UpdateFromScan(asyncX, asyncZ, asyncColors, asyncHeights, asyncWaterFlags, cave);
+                            std::thread([asyncX, asyncZ, asyncColors, asyncHeights, asyncWaterFlags]() {
+                                MapCacheManager::UpdateFromScan(asyncX, asyncZ, asyncColors, asyncHeights, asyncWaterFlags, false);
                                 delete[] asyncColors;
                                 delete[] asyncHeights;
                                 delete[] asyncWaterFlags;

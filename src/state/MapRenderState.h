@@ -93,11 +93,14 @@ inline std::atomic<bool> g_mapDataUpdated{true};
 extern mce::Color g_mapColors[MAP_DATA_SIZE][MAP_DATA_SIZE];
 extern float g_mapHeights[MAP_DATA_SIZE][MAP_DATA_SIZE];
 inline bool g_mapWaterFlags[MAP_DATA_SIZE][MAP_DATA_SIZE] = {};
+// 洞穴通道光照；负值表示墙体或未加载区域，渲染时保持纯黑。
+inline float g_mapBrightness[MAP_DATA_SIZE][MAP_DATA_SIZE] = {};
 
 // 后台缓冲（供 CPU 高速扫描写入）
 inline mce::Color g_mapColorsBack[MAP_DATA_SIZE][MAP_DATA_SIZE];
 inline float g_mapHeightsBack[MAP_DATA_SIZE][MAP_DATA_SIZE];
 inline bool g_mapWaterFlagsBack[MAP_DATA_SIZE][MAP_DATA_SIZE] = {};
+inline float g_mapBrightnessBack[MAP_DATA_SIZE][MAP_DATA_SIZE] = {};
 
 // 记录最后一次生成贴图时的绝对中心坐标
 inline int g_lastRenderX = 0;
