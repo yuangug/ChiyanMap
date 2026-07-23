@@ -19,7 +19,7 @@
 #include <mc/world/level/block/BlockType.h>
 #include <mc/world/level/biome/Biome.h>
 #include <mc/world/level/material/Material.h>
-#include <mc/world/level/material/MaterialType.h>
+#include <mc/deps/shared_types/v1_26_20/block/MaterialType.h>
 #include "state/WaypointManager.h"
 #include "state/DeathPointManager.h"
 #include <mc/world/level/BlockPos.h>
@@ -504,6 +504,8 @@ inline constexpr int kCaveLayerTopOffset = 3;
 inline constexpr int kCaveLayerAirSearchDepth = 64;
 inline constexpr int kCaveLayerFloorSearchDepth = 64;
 inline constexpr int kCaveOpenWaterSkySearchRange = 192;
+
+using MaterialType = SharedTypes::v1_26_20::MaterialType;
 
 inline MaterialType GetCaveMaterialType(Block const& block) {
     return block.getBlockType().mMaterial.mType;
