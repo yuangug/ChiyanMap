@@ -2366,6 +2366,7 @@ namespace DX11Hook {
         ImGui::TextDisabled("%s", LanguageManager::GetText("DEATH_POINTS_HINT"));
         ImGui::Separator();
 
+        bool triggerTeleport = false;
         ImGui::BeginChild("DeathPointList", ImVec2(0, 0), false);
         for (const auto& point : points) {
             ImGui::PushID(point.id.c_str());
@@ -2397,10 +2398,11 @@ namespace DX11Hook {
             if (!sameDimension) ImGui::BeginDisabled();
             PushOreButtonStyle(OreButtonKind::Primary);
             if (ImGui::Button(LanguageManager::GetText("DEATH_POINT_TELEPORT"), ImVec2(buttonWidth, 0))) {
-                MapRenderState::tpTargetX = (float)point.x;
+                MapRenderState::tpTargetX = (float)point.x + 0.5f;
                 MapRenderState::tpTargetY = (float)point.y;
-                MapRenderState::tpTargetZ = (float)point.z;
+                MapRenderState::tpTargetZ = (float)point.z + 0.5f;
                 MapRenderState::triggerTeleport.store(true);
+                triggerTeleport = true;
             }
             PopOreButtonStyle();
             if (!sameDimension) ImGui::EndDisabled();
@@ -2432,6 +2434,12 @@ namespace DX11Hook {
             ImGui::PopID();
         }
         ImGui::EndChild();
+
+        // 传送命令由键盘模拟输入；窗口仍打开时会拦截回车，必须先退出所有地图 UI。
+        if (triggerTeleport) {
+            MapRenderState::showDeathPointUI = false;
+            MapRenderState::showBigMap = false;
+        }
 
         ImGui::End();
     }
