@@ -515,6 +515,20 @@ inline bool IsCaveWaterBlock(Block const& block) {
     return material == MaterialType::Water || material == MaterialType::Bubble;
 }
 
+inline constexpr float kWaterOverlayAlpha = 0.45f;
+inline constexpr mce::Color kDefaultWaterTint(0.18f, 0.38f, 0.85f, 1.0f);
+
+// 水色叠加在海床/洞底颜色之上；高度阴影仍由后续烘焙使用底部 Y 计算。
+inline mce::Color BlendWaterOverFloor(mce::Color floorColor, mce::Color waterTint) {
+    if (waterTint.a <= 0.01f) waterTint = kDefaultWaterTint;
+    return mce::Color(
+        floorColor.r + (waterTint.r - floorColor.r) * kWaterOverlayAlpha,
+        floorColor.g + (waterTint.g - floorColor.g) * kWaterOverlayAlpha,
+        floorColor.b + (waterTint.b - floorColor.b) * kWaterOverlayAlpha,
+        floorColor.a
+    );
+}
+
 // 洞穴投影和自动判定共享此规则：流体、植被与透明方块都不形成洞穴墙体。
 inline bool IsCavePassableBlock(Block const& block) {
     if (block.isAir()) return true;
@@ -1096,6 +1110,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
 
                                         if (foundChannel) {
                                             BlockPos channelPos(targetX, channelY, targetZ);
+                                            isWaterCell = IsCaveWaterBlock(region.getBlock(channelPos));
                                             brightness = std::clamp(
                                                 std::max(region.getBrightness(channelPos), region.getSkylightBrightness(channelPos) / 15.0f),
                                                 0.0f,
@@ -1107,6 +1122,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                                                 int candidateY = channelY - drop;
                                                 if (candidateY < -64) break;
                                                 Block const& floorBlock = region.getBlock(BlockPos(targetX, candidateY, targetZ));
+                                                isWaterCell = isWaterCell || IsCaveWaterBlock(floorBlock);
                                                 if (IsCavePassableBlock(floorBlock)) continue;
 
                                                 foundFloor = true;
@@ -1147,6 +1163,10 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                                                 floorY = std::max(channelY - kCaveLayerFloorSearchDepth, -64);
                                                 caveColor = mce::Color(0.08f, 0.08f, 0.08f, 1.0f);
                                             }
+
+                                            if (isWaterCell) {
+                                                caveColor = BlendWaterOverFloor(caveColor, s_cachedWater);
+                                            }
                                         }
                                     } catch (...) {
                                         caveColor = mce::Color(0, 0, 0, 1);
@@ -1168,6 +1188,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                                 if (topY > -64) {
                                     Block const& block = region.getBlock(BlockPos(targetX, topY - 1, targetZ));
                                     std::string blockName = block.getTypeName();
+                                    bool hasSurfaceWater = IsCaveWaterBlock(block);
 
                                     if (blockName.find("snow") != std::string::npos) {
                                         g_mapColorsBack[arrX][arrZ] = mce::Color(0.95f, 0.98f, 1.0f, 1.0f);
@@ -1222,19 +1243,34 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                                         }
                                     }
 
-                                    // 水面列：扫描海床 Y，用于深度阴影
-                                    if (blockName.find("water") != std::string::npos) {
+                                    // 水面列：以海床颜色作为底色，叠加水色；海床 Y 继续用于高度阴影。
+                                    if (hasSurfaceWater) {
                                         isWaterCell = true;
                                         int seaFloor = (int)topY - 1;
                                         int surfaceY = seaFloor + 1;
                                         while (seaFloor > -64 && (surfaceY - seaFloor) < 64) {
                                             try {
-                                                std::string n = region.getBlock(BlockPos(targetX, seaFloor, targetZ)).getTypeName();
-                                                if (n.find("water") == std::string::npos && n.find("kelp") == std::string::npos && n.find("seagrass") == std::string::npos && n != "minecraft:air" && n != "air") break;
+                                                Block const& seaFloorBlock = region.getBlock(BlockPos(targetX, seaFloor, targetZ));
+                                                if (!IsCavePassableBlock(seaFloorBlock)) break;
                                             } catch (...) { break; }
                                             seaFloor--;
                                         }
                                         g_mapHeightsBack[arrX][arrZ] = (float)seaFloor;
+                                        try {
+                                            Block const& seaFloorBlock = region.getBlock(BlockPos(targetX, seaFloor, targetZ));
+                                            mce::Color seaFloorColor = getBlockColor(
+                                                seaFloorBlock.getTypeName(),
+                                                s_cachedGrass,
+                                                s_cachedFoliage,
+                                                s_cachedWater
+                                            );
+                                            g_mapColorsBack[arrX][arrZ] = BlendWaterOverFloor(seaFloorColor, s_cachedWater);
+                                        } catch (...) {
+                                            g_mapColorsBack[arrX][arrZ] = BlendWaterOverFloor(
+                                                mce::Color(0.08f, 0.08f, 0.08f, 1.0f),
+                                                s_cachedWater
+                                            );
+                                        }
                                     }
                                 } else {
                                     g_mapColorsBack[arrX][arrZ] = mce::Color(0.0f, 0.0f, 0.0f, 0.0f);
@@ -1379,7 +1415,8 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                     for (auto const& sample : samples) {
                         try {
                             BlockPos channelPos(sample.worldX, sample.channelY, sample.worldZ);
-                            if (!region->hasChunksAt(channelPos, 0, false) || !region->getBlock(channelPos).isAir()) continue;
+                            if (!region->hasChunksAt(channelPos, 0, false) ||
+                                !IsCavePassableBlock(region->getBlock(channelPos))) continue;
                             float light = std::clamp(
                                 std::max(region->getBrightness(channelPos), region->getSkylightBrightness(channelPos) / 15.0f),
                                 0.0f,
