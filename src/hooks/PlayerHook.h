@@ -515,7 +515,7 @@ inline bool IsCaveWaterBlock(Block const& block) {
     return material == MaterialType::Water || material == MaterialType::Bubble;
 }
 
-inline constexpr float kWaterOverlayAlpha = 0.45f;
+inline constexpr float kWaterOverlayAlpha = 0.65f;
 inline constexpr mce::Color kDefaultWaterTint(0.18f, 0.38f, 0.85f, 1.0f);
 
 // 水色叠加在海床/洞底颜色之上；高度阴影仍由后续烘焙使用底部 Y 计算。
