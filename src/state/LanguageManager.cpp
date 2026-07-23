@@ -66,7 +66,7 @@ namespace LanguageManager {
     "SAVE_EXIT": "Save && Exit",
     "DONT_SAVE": "Don't Save",
     "LANG_SELECT": "Language",
-    "CAVE_MODE": "\u26cf Cave Mode Y=%d",
+    "CAVE_MODE": "Cave Layer Top Y=%d",
     "ROTATE_MAP": "Rotate Map with Player"
 })json"},
         {"zh_CN", R"json({
@@ -118,7 +118,7 @@ namespace LanguageManager {
     "SAVE_EXIT": "\u4fdd\u5b58\u5e76\u9000\u51fa",
     "DONT_SAVE": "\u4e0d\u4fdd\u5b58",
     "LANG_SELECT": "\u8bed\u8a00",
-    "CAVE_MODE": "\u26cf \u6d1e\u7a74\u6a21\u5f0f Y=%d",
+    "CAVE_MODE": "\u6d1e\u7a74\u5206\u5c42 Top Y=%d",
     "ROTATE_MAP": "跟随玩家旋转"
 })json"},
         {"zh_TW", R"json({
@@ -170,7 +170,7 @@ namespace LanguageManager {
     "SAVE_EXIT": "\u4fdd\u5b58\u4e26\u9000\u51fa",
     "DONT_SAVE": "\u4e0d\u4fdd\u5b58",
     "LANG_SELECT": "\u8a9e\u8a00",
-    "CAVE_MODE": "\u26cf \u6d1e\u7a74\u6a21\u5f0f Y=%d",
+    "CAVE_MODE": "\u6d1e\u7a74\u5206\u5c42 Top Y=%d",
     "ROTATE_MAP": "跟隨玩家旋轉"
 })json"},
         {"de", R"json({

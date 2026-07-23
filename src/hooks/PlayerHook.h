@@ -496,6 +496,11 @@ inline mce::Color getBlockColor(std::string const& name, mce::Color grassCol, mc
     return mce::Color(r, g, b, 1.0f);
 }
 
+// Xaero 风格洞穴分层投影：所有列从同一个 Top Y 向下解析，避免相邻列跳到不同高度层。
+inline constexpr int kCaveLayerTopOffset = 3;
+inline constexpr int kCaveLayerAirSearchDepth = 64;
+inline constexpr int kCaveLayerFloorSearchDepth = 64;
+
 // 自动检测玩家是否在地下：顶棚、下方地板和天空光共同避免大型封闭洞室误判为地表。
 inline bool IsPlayerUnderground(BlockSource* region, int px, int py, int pz) {
     if (!region) return false;
@@ -715,7 +720,11 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                 // 下界自动洞穴模式
                 if (dimId == 1) {
                     MapRenderState::caveMode = true;
-                    MapRenderState::caveScanY = (int)g_playerY;
+                    MapRenderState::caveScanY = std::clamp(
+                        (int)std::floor(g_playerY) + kCaveLayerTopOffset,
+                        -64,
+                        319
+                    );
                 } else {
                     MapRenderState::caveMode = false;
                 }
@@ -836,6 +845,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
         static int currentScanX  = -99999;
         static int currentScanZ  = -99999;
         static int currentScanY  = -99999;
+        static int currentCaveTopY = -99999;
         static bool isScanning   = false;
         static int  currentRow   = -MAP_DATA_RADIUS;
         static int  currentCol   = -MAP_DATA_RADIUS;
@@ -843,7 +853,8 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
         static bool prevCave     = false;
         enum class CaveScanPhase { SeedAirColumns, ResolveColumns };
         static CaveScanPhase caveScanPhase = CaveScanPhase::SeedAirColumns;
-        static bool caveSeedColumns[MAP_DATA_SIZE][MAP_DATA_SIZE] = {};
+        // 阶段一保存每列从 Top Y 向下首次命中空气的深度，阶段二无需重复读取空气列。
+        static signed char caveChannelDrops[MAP_DATA_SIZE][MAP_DATA_SIZE] = {};
         static constexpr int kCaveChunkGridSize = MAP_DATA_SIZE / 16 + 2;
         static signed char caveChunkLoadStates[kCaveChunkGridSize][kCaveChunkGridSize] = {};
         static int caveChunkBaseX = 0;
@@ -905,9 +916,14 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
             currentScanX  = px;
             currentScanZ  = pz;
             currentScanY  = py;
+            currentCaveTopY = std::clamp(
+                currentScanY + kCaveLayerTopOffset,
+                -64,
+                319
+            );
             ticksSinceScan = 0;
             prevCave = MapRenderState::caveMode;
-            MapRenderState::caveScanY = currentScanY;
+            MapRenderState::caveScanY = prevCave ? currentCaveTopY : currentScanY;
 
             {
                 std::lock_guard<std::mutex> lock(g_mapDataMutex);
@@ -920,7 +936,11 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                     MapCacheManager::PreloadScanBuffer(currentScanX, currentScanZ, g_mapColorsBack, g_mapHeightsBack);
                 }
             }
-            std::memset(caveSeedColumns, 0, sizeof(caveSeedColumns));
+            std::fill(
+                &caveChannelDrops[0][0],
+                &caveChannelDrops[0][0] + MAP_DATA_SIZE * MAP_DATA_SIZE,
+                static_cast<signed char>(-1)
+            );
             std::memset(caveChunkLoadStates, -1, sizeof(caveChunkLoadStates));
             caveScanPhase = CaveScanPhase::SeedAirColumns;
             caveChunkBaseX = (currentScanX - MAP_DATA_RADIUS) >> 4;
@@ -974,51 +994,36 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                             int arrZ    = dz + MAP_DATA_RADIUS;
 
                             if (prevCave && caveScanPhase == CaveScanPhase::SeedAirColumns) {
-                                // 全图统一按正负 20 格找空气种子，避免小地图可见边界出现硬分界。
-                                bool hasAirSeed = false;
+                                // 全图从同一个 Top Y 向下找空气种子，避免每列选择最近空气造成高度跳变。
+                                int channelDrop = -1;
                                 if (isChunkLoaded(targetX, targetZ)) {
                                     try {
-                                        for (int distance = 0; distance <= 20 && !hasAirSeed; ++distance) {
-                                            int offsets[2] = {-distance, distance};
-                                            int offsetCount = distance == 0 ? 1 : 2;
-                                            for (int i = 0; i < offsetCount; ++i) {
-                                                int candidateY = currentScanY + offsets[i];
-                                                if (candidateY < -64 || candidateY > 319) continue;
-                                                if (region.getBlock(BlockPos(targetX, candidateY, targetZ)).isAir()) {
-                                                    hasAirSeed = true;
-                                                    break;
-                                                }
+                                        for (int drop = 0; drop <= kCaveLayerAirSearchDepth; ++drop) {
+                                            int candidateY = currentCaveTopY - drop;
+                                            if (candidateY < -64) break;
+                                            if (region.getBlock(BlockPos(targetX, candidateY, targetZ)).isAir()) {
+                                                channelDrop = drop;
+                                                break;
                                             }
                                         }
                                     } catch (...) {
-                                        hasAirSeed = false;
+                                        channelDrop = -1;
                                     }
                                 }
-                                caveSeedColumns[arrX][arrZ] = hasAirSeed;
+                                caveChannelDrops[arrX][arrZ] = static_cast<signed char>(channelDrop);
                             } else if (prevCave) {
-                                // 阶段二：只解析命中的空气列，按与玩家高度的距离选择可见通道。
+                                // 阶段二：只解析命中的空气列，从固定 Top Y 向下选择第一条可见通道。
                                 mce::Color caveColor(0, 0, 0, 1);
                                 int floorY = currentScanY;
                                 int channelY = currentScanY;
                                 float brightness = -1.0f;
                                 bool isWaterCell = false;
 
-                                if (caveSeedColumns[arrX][arrZ] && isChunkLoaded(targetX, targetZ)) {
+                                int channelDrop = caveChannelDrops[arrX][arrZ];
+                                if (channelDrop >= 0 && isChunkLoaded(targetX, targetZ)) {
                                     try {
-                                        bool foundChannel = false;
-                                        for (int distance = 0; distance <= 20 && !foundChannel; ++distance) {
-                                            int offsets[2] = {-distance, distance};
-                                            int offsetCount = distance == 0 ? 1 : 2;
-                                            for (int i = 0; i < offsetCount; ++i) {
-                                                int candidateY = currentScanY + offsets[i];
-                                                if (candidateY < -64 || candidateY > 319) continue;
-                                                if (region.getBlock(BlockPos(targetX, candidateY, targetZ)).isAir()) {
-                                                    channelY = candidateY;
-                                                    foundChannel = true;
-                                                    break;
-                                                }
-                                            }
-                                        }
+                                        channelY = currentCaveTopY - channelDrop;
+                                        bool foundChannel = true;
 
                                         if (foundChannel) {
                                             BlockPos channelPos(targetX, channelY, targetZ);
@@ -1029,7 +1034,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                                             );
 
                                             bool foundFloor = false;
-                                            for (int drop = 1; drop <= 64; ++drop) {
+                                            for (int drop = 1; drop <= kCaveLayerFloorSearchDepth; ++drop) {
                                                 int candidateY = channelY - drop;
                                                 if (candidateY < -64) break;
                                                 Block const& floorBlock = region.getBlock(BlockPos(targetX, candidateY, targetZ));
@@ -1071,7 +1076,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
 
                                             if (!foundFloor) {
                                                 // 有空气但 64 格内没有地板，保留为低亮度深洞而不是泄露地表颜色。
-                                                floorY = std::max(channelY - 64, -64);
+                                                floorY = std::max(channelY - kCaveLayerFloorSearchDepth, -64);
                                                 caveColor = mce::Color(0.08f, 0.08f, 0.08f, 1.0f);
                                             }
                                         }
