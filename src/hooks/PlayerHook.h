@@ -930,12 +930,31 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
         static int currentScanY  = -99999;
         static int currentCaveTopY = -99999;
         static bool isScanning   = false;
-        static int  currentRow   = -MAP_DATA_RADIUS;
-        static int  currentCol   = -MAP_DATA_RADIUS;
         static int  ticksSinceScan = 0;
         static bool prevCave     = false;
-        enum class CaveScanPhase { SeedAirColumns, ResolveColumns };
-        static CaveScanPhase caveScanPhase = CaveScanPhase::SeedAirColumns;
+        struct ScanCell {
+            short dx;
+            short dz;
+        };
+        enum class ScanPhase {
+            SurfaceVisible,
+            SurfaceOuter,
+            CaveSeedVisible,
+            CaveResolveVisible,
+            CaveSeedOuter,
+            CaveResolveOuter
+        };
+        static std::vector<ScanCell> scanOrder;
+        static size_t scanCursor = 0;
+        static size_t visibleScanCellCount = 0;
+        static ScanPhase scanPhase = ScanPhase::SurfaceVisible;
+        static bool minimapSnapshotPublished = false;
+        static bool hasPublishedScanBuffer = false;
+        static bool publishedBufferWasCave = false;
+        static size_t outerCellsSincePublish = 0;
+        static bool visibleAreaHadUnloadedChunks = false;
+        static std::string scanWorldId;
+        static int scanWorldDimension = -99999;
         // 阶段一保存每列从 Top Y 向下首次命中空气的深度，阶段二无需重复读取空气列。
         static signed char caveChannelDrops[MAP_DATA_SIZE][MAP_DATA_SIZE] = {};
         static constexpr int kCaveChunkGridSize = MAP_DATA_SIZE / 16 + 2;
@@ -953,6 +972,28 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
         int pz = g_playerBlockZ;
         int py = (int)std::floor(g_playerY);
         ticksSinceScan++;
+
+        if (scanWorldId != MapRenderState::currentWorldId || scanWorldDimension != MapRenderState::currentDimensionId) {
+            scanWorldId = MapRenderState::currentWorldId;
+            scanWorldDimension = MapRenderState::currentDimensionId;
+            currentScanX = currentScanZ = currentScanY = -99999;
+            isScanning = false;
+            hasPublishedScanBuffer = false;
+            ticksSinceScan = 101;
+        }
+
+        auto publishScanBuffer = [&]() {
+            std::lock_guard<std::mutex> lock(g_mapDataMutex);
+            std::memcpy(g_mapHeights, g_mapHeightsBack, sizeof(g_mapHeights));
+            std::memcpy(g_mapColors, g_mapColorsBack, sizeof(g_mapColors));
+            std::memcpy(g_mapWaterFlags, g_mapWaterFlagsBack, sizeof(g_mapWaterFlags));
+            std::memcpy(g_mapBrightness, g_mapBrightnessBack, sizeof(g_mapBrightness));
+            std::memcpy(g_mapChannelHeights, g_mapChannelHeightsBack, sizeof(g_mapChannelHeights));
+            g_lastRenderX = currentScanX;
+            g_lastRenderZ = currentScanZ;
+            g_mapDataGeneration.fetch_add(1);
+            g_mapDataUpdated.store(true);
+        };
 
         // 洞穴判断不参与逐列扫描。扫描期间每 10 tick 复查一次，发现模式变化立刻废弃旧任务。
         if (!isScanning || ++caveDetectionTicks >= 10) {
@@ -996,6 +1037,8 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
         if (!isScanning &&
             (std::abs(px - currentScanX) >= 16 || std::abs(pz - currentScanZ) >= 16 ||
              py != currentScanY || ticksSinceScan > 100)) {
+            const int previousRenderX = g_lastRenderX;
+            const int previousRenderZ = g_lastRenderZ;
             currentScanX  = px;
             currentScanZ  = pz;
             currentScanY  = py;
@@ -1008,6 +1051,13 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
             prevCave = MapRenderState::caveMode;
             MapRenderState::caveScanY = prevCave ? currentCaveTopY : currentScanY;
 
+            const int shiftX = currentScanX - previousRenderX;
+            const int shiftZ = currentScanZ - previousRenderZ;
+            const bool canReuseFrontBuffer = hasPublishedScanBuffer &&
+                publishedBufferWasCave == prevCave &&
+                std::abs(shiftX) < MAP_DATA_SIZE && std::abs(shiftZ) < MAP_DATA_SIZE;
+            std::vector<unsigned char> newEdgeCells(MAP_DATA_SIZE * MAP_DATA_SIZE, 0);
+
             {
                 std::lock_guard<std::mutex> lock(g_mapDataMutex);
                 std::memset(g_mapColorsBack, 0, sizeof(g_mapColorsBack));
@@ -1018,6 +1068,80 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                 if (!prevCave) {
                     MapCacheManager::PreloadScanBuffer(currentScanX, currentScanZ, g_mapColorsBack, g_mapHeightsBack);
                 }
+
+                // 重心移动时复用旧窗口，只让新露出的边缘成为优先扫描目标。
+                if (canReuseFrontBuffer) {
+                    for (int x = 0; x < MAP_DATA_SIZE; ++x) {
+                        for (int z = 0; z < MAP_DATA_SIZE; ++z) {
+                            int sourceX = x + shiftX;
+                            int sourceZ = z + shiftZ;
+                            size_t index = static_cast<size_t>(x) * MAP_DATA_SIZE + z;
+                            if (sourceX < 0 || sourceX >= MAP_DATA_SIZE || sourceZ < 0 || sourceZ >= MAP_DATA_SIZE) {
+                                newEdgeCells[index] = 1;
+                                continue;
+                            }
+                            g_mapColorsBack[x][z] = g_mapColors[sourceX][sourceZ];
+                            g_mapHeightsBack[x][z] = g_mapHeights[sourceX][sourceZ];
+                            g_mapWaterFlagsBack[x][z] = g_mapWaterFlags[sourceX][sourceZ];
+                            g_mapBrightnessBack[x][z] = g_mapBrightness[sourceX][sourceZ];
+                            g_mapChannelHeightsBack[x][z] = g_mapChannelHeights[sourceX][sourceZ];
+                        }
+                    }
+                }
+            }
+
+            scanOrder.clear();
+            scanOrder.reserve(MAP_DATA_SIZE * MAP_DATA_SIZE);
+            std::vector<unsigned char> queued(MAP_DATA_SIZE * MAP_DATA_SIZE, 0);
+            auto enqueueCell = [&](int dx, int dz) {
+                if (dx < -MAP_DATA_RADIUS || dx > MAP_DATA_RADIUS || dz < -MAP_DATA_RADIUS || dz > MAP_DATA_RADIUS) return;
+                int arrX = dx + MAP_DATA_RADIUS;
+                int arrZ = dz + MAP_DATA_RADIUS;
+                size_t index = static_cast<size_t>(arrX) * MAP_DATA_SIZE + arrZ;
+                if (queued[index]) return;
+                queued[index] = 1;
+                scanOrder.push_back({static_cast<short>(dx), static_cast<short>(dz)});
+            };
+
+            // 小地图可见方形区域必须先完整扫描，再整体发布到前台贴图。
+            for (int dx = -50; dx <= 50; ++dx) {
+                for (int dz = -50; dz <= 50; ++dz) enqueueCell(dx, dz);
+            }
+            visibleScanCellCount = scanOrder.size();
+
+            // 玩家移动后新出现的边缘不等待远区的低频刷新。
+            if (canReuseFrontBuffer) {
+                for (int x = 0; x < MAP_DATA_SIZE; ++x) {
+                    for (int z = 0; z < MAP_DATA_SIZE; ++z) {
+                        if (newEdgeCells[static_cast<size_t>(x) * MAP_DATA_SIZE + z]) {
+                            enqueueCell(x - MAP_DATA_RADIUS, z - MAP_DATA_RADIUS);
+                        }
+                    }
+                }
+            }
+
+            auto isUnloadedCell = [&](int dx, int dz) {
+                int arrX = dx + MAP_DATA_RADIUS;
+                int arrZ = dz + MAP_DATA_RADIUS;
+                return prevCave ? g_mapBrightnessBack[arrX][arrZ] < 0.0f : g_mapColorsBack[arrX][arrZ].a <= 0.01f;
+            };
+            auto enqueueRing = [&](int radius, bool unloadedFirst) {
+                auto enqueueIfMatched = [&](int dx, int dz) {
+                    if (isUnloadedCell(dx, dz) == unloadedFirst) enqueueCell(dx, dz);
+                };
+                for (int dz = -radius; dz <= radius; ++dz) {
+                    enqueueIfMatched(-radius, dz);
+                    enqueueIfMatched(radius, dz);
+                }
+                for (int dx = -radius + 1; dx < radius; ++dx) {
+                    enqueueIfMatched(dx, -radius);
+                    enqueueIfMatched(dx, radius);
+                }
+            };
+            // 每一圈先尝试未加载格，再刷新已有格；近圈总是先于远圈。
+            for (int radius = 51; radius <= MAP_DATA_RADIUS; ++radius) {
+                enqueueRing(radius, true);
+                enqueueRing(radius, false);
             }
             std::fill(
                 &caveChannelDrops[0][0],
@@ -1025,14 +1149,16 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                 static_cast<signed char>(-1)
             );
             std::memset(caveChunkLoadStates, -1, sizeof(caveChunkLoadStates));
-            caveScanPhase = CaveScanPhase::SeedAirColumns;
+            scanPhase = prevCave ? ScanPhase::CaveSeedVisible : ScanPhase::SurfaceVisible;
+            scanCursor = 0;
+            minimapSnapshotPublished = false;
+            outerCellsSincePublish = 0;
+            visibleAreaHadUnloadedChunks = false;
             caveChunkBaseX = (currentScanX - MAP_DATA_RADIUS) >> 4;
             caveChunkBaseZ = (currentScanZ - MAP_DATA_RADIUS) >> 4;
             caveLightRefreshActive = false;
             g_caveLightRefreshReady.store(false);
             isScanning = true;
-            currentRow = -MAP_DATA_RADIUS;
-            currentCol = -MAP_DATA_RADIUS;
         }
 
         if (isScanning) {
@@ -1060,23 +1186,40 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                             return region.hasChunksAt(BlockPos(x, currentScanY, z), 0, false);
                         }
                         signed char& state = caveChunkLoadStates[gridX][gridZ];
-                        if (state < 0) {
-                            state = region.hasChunksAt(BlockPos(x, currentScanY, z), 0, false) ? 1 : 0;
+                        if (state <= 0) {
+                            if (region.hasChunksAt(BlockPos(x, currentScanY, z), 0, false)) {
+                                state = 1;
+                            } else {
+                                state = 0;
+                                return false;
+                            }
                         }
-                        return state != 0;
+                        return true;
                     };
 
-                    while (currentRow <= MAP_DATA_RADIUS && !timeBudgetExceeded) {
-                        int dx = currentRow;
+                    auto isOuterPhase = [&]() {
+                        return scanPhase == ScanPhase::SurfaceOuter || scanPhase == ScanPhase::CaveSeedOuter ||
+                            scanPhase == ScanPhase::CaveResolveOuter;
+                    };
+                    auto isCaveSeedPhase = [&]() {
+                        return scanPhase == ScanPhase::CaveSeedVisible || scanPhase == ScanPhase::CaveSeedOuter;
+                    };
+                    auto phaseEnd = [&]() {
+                        return isOuterPhase() ? scanOrder.size() : visibleScanCellCount;
+                    };
+
+                    while (scanCursor < phaseEnd() && !timeBudgetExceeded) {
+                        ScanCell const& scanCell = scanOrder[scanCursor];
+                        int dx = scanCell.dx;
                         int arrX = dx + MAP_DATA_RADIUS;
 
-                        while (currentCol <= MAP_DATA_RADIUS) {
-                            int dz = currentCol;
+                        {
+                            int dz = scanCell.dz;
                             int targetX = currentScanX + dx;
                             int targetZ = currentScanZ + dz;
                             int arrZ    = dz + MAP_DATA_RADIUS;
 
-                            if (prevCave && caveScanPhase == CaveScanPhase::SeedAirColumns) {
+                            if (isCaveSeedPhase()) {
                                 // 全图从同一个 Top Y 向下找开放通道，水体和植被不会形成黑墙。
                                 int channelDrop = -1;
                                 if (isChunkLoaded(targetX, targetZ)) {
@@ -1092,6 +1235,8 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                                     } catch (...) {
                                         channelDrop = -1;
                                     }
+                                } else if (!isOuterPhase()) {
+                                    visibleAreaHadUnloadedChunks = true;
                                 }
                                 caveChannelDrops[arrX][arrZ] = static_cast<signed char>(channelDrop);
                             } else if (prevCave) {
@@ -1179,6 +1324,8 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                                 g_mapWaterFlagsBack[arrX][arrZ] = isWaterCell;
                                 g_mapBrightnessBack[arrX][arrZ] = brightness;
                                 g_mapChannelHeightsBack[arrX][arrZ] = channelY;
+                            } else if (!isChunkLoaded(targetX, targetZ)) {
+                                if (!isOuterPhase()) visibleAreaHadUnloadedChunks = true;
                             } else {
                                 // === 地表模式：现有扫描逻辑 ===
                                 short topY = region.getAboveTopSolidBlock(targetX, targetZ, true, true);
@@ -1278,71 +1425,87 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                                 g_mapWaterFlagsBack[arrX][arrZ] = isWaterCell;
                             }
 
-                            currentCol++;
+                            scanCursor++;
+                            if (isOuterPhase() && !isCaveSeedPhase()) ++outerCellsSincePublish;
 
-                            if ((currentCol & 63) == 0) {
+                            if ((scanCursor & 63) == 0) {
                                 auto now = std::chrono::high_resolution_clock::now();
-                                int budgetMicros = prevCave ? 6000 : 2500;
+                                int budgetMicros = (prevCave || !isOuterPhase()) ? 6000 : 2500;
                                 if (std::chrono::duration_cast<std::chrono::microseconds>(now - scanStartTime).count() > budgetMicros) {
                                     timeBudgetExceeded = true;
                                     break;
                                 }
                             }
                         }
-
-                        if (currentCol > MAP_DATA_RADIUS) {
-                            currentCol = -MAP_DATA_RADIUS;
-                            currentRow++;
-                        }
                     }
 
-                    if (prevCave && caveScanPhase == CaveScanPhase::SeedAirColumns && currentRow > MAP_DATA_RADIUS) {
-                        caveScanPhase = CaveScanPhase::ResolveColumns;
-                        currentRow = -MAP_DATA_RADIUS;
-                        currentCol = -MAP_DATA_RADIUS;
-                    } else if (currentRow > MAP_DATA_RADIUS) {
-                        isScanning = false;
-                        ticksSinceScan = 0;
-                        {
-                            std::lock_guard<std::mutex> lock(g_mapDataMutex);
-                            std::memcpy(g_mapHeights, g_mapHeightsBack, sizeof(g_mapHeights));
-                            std::memcpy(g_mapColors, g_mapColorsBack, sizeof(g_mapColors));
-                            std::memcpy(g_mapWaterFlags, g_mapWaterFlagsBack, sizeof(g_mapWaterFlags));
-                            std::memcpy(g_mapBrightness, g_mapBrightnessBack, sizeof(g_mapBrightness));
-                            std::memcpy(g_mapChannelHeights, g_mapChannelHeightsBack, sizeof(g_mapChannelHeights));
-                            g_lastRenderX = currentScanX;
-                            g_lastRenderZ = currentScanZ;
-                            g_mapDataGeneration.fetch_add(1);
-                            g_mapDataUpdated.store(true);
+                    if (minimapSnapshotPublished && outerCellsSincePublish >= 2048) {
+                        publishScanBuffer();
+                        outerCellsSincePublish = 0;
+                    }
+
+                    if (scanCursor >= phaseEnd()) {
+                        switch (scanPhase) {
+                        case ScanPhase::SurfaceVisible:
+                            publishScanBuffer();
+                            minimapSnapshotPublished = true;
+                            hasPublishedScanBuffer = true;
+                            publishedBufferWasCave = false;
+                            scanPhase = ScanPhase::SurfaceOuter;
+                            scanCursor = visibleScanCellCount;
+                            break;
+                        case ScanPhase::CaveSeedVisible:
+                            scanPhase = ScanPhase::CaveResolveVisible;
+                            scanCursor = 0;
+                            break;
+                        case ScanPhase::CaveResolveVisible:
+                            publishScanBuffer();
+                            minimapSnapshotPublished = true;
+                            hasPublishedScanBuffer = true;
+                            publishedBufferWasCave = true;
+                            scanPhase = ScanPhase::CaveSeedOuter;
+                            scanCursor = visibleScanCellCount;
+                            break;
+                        case ScanPhase::CaveSeedOuter:
+                            scanPhase = ScanPhase::CaveResolveOuter;
+                            scanCursor = visibleScanCellCount;
+                            break;
+                        case ScanPhase::SurfaceOuter:
+                        case ScanPhase::CaveResolveOuter: {
+                            publishScanBuffer();
+                            outerCellsSincePublish = 0;
+                            isScanning = false;
+                            // 玩家可见范围存在尚未进入客户端的区块时，缩短下次尝试间隔。
+                            ticksSinceScan = visibleAreaHadUnloadedChunks ? 80 : 0;
+
+                            if (prevCave) {
+                                caveLightRefreshActive = false;
+                                caveLightRefreshIndex = 0;
+                                caveLightRefreshCooldown = 0;
+                                caveLightRefreshLeft = MAP_DATA_RADIUS - 50;
+                                caveLightRefreshTop = MAP_DATA_RADIUS - 50;
+                            } else {
+                                using ColorGrid = mce::Color[MAP_DATA_SIZE][MAP_DATA_SIZE];
+                                using HeightGrid = float[MAP_DATA_SIZE][MAP_DATA_SIZE];
+                                using WaterGrid = bool[MAP_DATA_SIZE][MAP_DATA_SIZE];
+                                auto asyncColors = new ColorGrid;
+                                auto asyncHeights = new HeightGrid;
+                                auto asyncWaterFlags = new WaterGrid;
+                                std::memcpy(asyncColors, g_mapColorsBack, sizeof(g_mapColorsBack));
+                                std::memcpy(asyncHeights, g_mapHeightsBack, sizeof(g_mapHeightsBack));
+                                std::memcpy(asyncWaterFlags, g_mapWaterFlagsBack, sizeof(g_mapWaterFlagsBack));
+                                int asyncX = currentScanX;
+                                int asyncZ = currentScanZ;
+
+                                std::thread([asyncX, asyncZ, asyncColors, asyncHeights, asyncWaterFlags]() {
+                                    MapCacheManager::UpdateFromScan(asyncX, asyncZ, asyncColors, asyncHeights, asyncWaterFlags, false);
+                                    delete[] asyncColors;
+                                    delete[] asyncHeights;
+                                    delete[] asyncWaterFlags;
+                                }).detach();
+                            }
+                            break;
                         }
-
-                        if (prevCave) {
-                            caveLightRefreshActive = false;
-                            caveLightRefreshIndex = 0;
-                            caveLightRefreshCooldown = 0;
-                            caveLightRefreshLeft = MAP_DATA_RADIUS - 50;
-                            caveLightRefreshTop = MAP_DATA_RADIUS - 50;
-                        }
-
-                        if (!prevCave) {
-                            using ColorGrid = mce::Color[MAP_DATA_SIZE][MAP_DATA_SIZE];
-                            using HeightGrid = float[MAP_DATA_SIZE][MAP_DATA_SIZE];
-                            using WaterGrid = bool[MAP_DATA_SIZE][MAP_DATA_SIZE];
-                            auto asyncColors = new ColorGrid;
-                            auto asyncHeights = new HeightGrid;
-                            auto asyncWaterFlags = new WaterGrid;
-                            std::memcpy(asyncColors, g_mapColorsBack, sizeof(g_mapColorsBack));
-                            std::memcpy(asyncHeights, g_mapHeightsBack, sizeof(g_mapHeightsBack));
-                            std::memcpy(asyncWaterFlags, g_mapWaterFlagsBack, sizeof(g_mapWaterFlagsBack));
-                            int asyncX = currentScanX;
-                            int asyncZ = currentScanZ;
-
-                            std::thread([asyncX, asyncZ, asyncColors, asyncHeights, asyncWaterFlags]() {
-                                MapCacheManager::UpdateFromScan(asyncX, asyncZ, asyncColors, asyncHeights, asyncWaterFlags, false);
-                                delete[] asyncColors;
-                                delete[] asyncHeights;
-                                delete[] asyncWaterFlags;
-                            }).detach();
                         }
                     }
                 }
