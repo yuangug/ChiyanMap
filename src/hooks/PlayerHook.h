@@ -16,7 +16,10 @@
 #include <mc/deps/core/math/Color.h>
 #include <mc/world/level/BlockSource.h>
 #include <mc/world/level/block/Block.h>
+#include <mc/world/level/block/BlockType.h>
 #include <mc/world/level/biome/Biome.h>
+#include <mc/world/level/material/Material.h>
+#include <mc/world/level/material/MaterialType.h>
 #include "state/WaypointManager.h"
 #include "state/DeathPointManager.h"
 #include <mc/world/level/BlockPos.h>
@@ -500,6 +503,66 @@ inline mce::Color getBlockColor(std::string const& name, mce::Color grassCol, mc
 inline constexpr int kCaveLayerTopOffset = 3;
 inline constexpr int kCaveLayerAirSearchDepth = 64;
 inline constexpr int kCaveLayerFloorSearchDepth = 64;
+inline constexpr int kCaveOpenWaterSkySearchRange = 192;
+
+inline MaterialType GetCaveMaterialType(Block const& block) {
+    return block.getBlockType().mMaterial.mType;
+}
+
+inline bool IsCaveWaterBlock(Block const& block) {
+    if (block.isAir()) return false;
+    MaterialType material = GetCaveMaterialType(block);
+    return material == MaterialType::Water || material == MaterialType::Bubble;
+}
+
+// 洞穴投影和自动判定共享此规则：流体、植被与透明方块都不形成洞穴墙体。
+inline bool IsCavePassableBlock(Block const& block) {
+    if (block.isAir()) return true;
+
+    MaterialType material = GetCaveMaterialType(block);
+    switch (material) {
+    case MaterialType::Air:
+    case MaterialType::Water:
+    case MaterialType::Bubble:
+    case MaterialType::Plant:
+    case MaterialType::SolidPlant:
+    case MaterialType::Leaves:
+    case MaterialType::Glass:
+    case MaterialType::Ice:
+    case MaterialType::PowderSnow:
+    case MaterialType::Cactus:
+    case MaterialType::Fire:
+    case MaterialType::Portal:
+    case MaterialType::Grate:
+    case MaterialType::StoneDecoration:
+    case MaterialType::DecorationSolid:
+    case MaterialType::NonSolid:
+    case MaterialType::StructureVoid:
+        return true;
+    default:
+        break;
+    }
+
+    if (material == MaterialType::Wood) {
+        std::string const& name = block.getTypeName();
+        return name.find("log") != std::string::npos || name.find("stem") != std::string::npos;
+    }
+    return false;
+}
+
+// 仅在玩家附近已经发现水体时调用。水或气泡经开放空间连到天空则是海洋/湖泊，而非洞穴。
+inline bool HasOpenWaterRouteToSky(BlockSource& region, int x, int y, int z) {
+    bool sawWater = false;
+    for (int distance = 0; distance <= kCaveOpenWaterSkySearchRange; ++distance) {
+        int candidateY = y + distance;
+        if (candidateY > 319) return sawWater;
+
+        Block const& block = region.getBlock(BlockPos(x, candidateY, z));
+        if (IsCaveWaterBlock(block)) sawWater = true;
+        if (!IsCavePassableBlock(block)) return false;
+    }
+    return sawWater;
+}
 
 // 自动检测玩家是否在地下：顶棚、下方地板和天空光共同避免大型封闭洞室误判为地表。
 inline bool IsPlayerUnderground(BlockSource* region, int px, int py, int pz) {
@@ -511,44 +574,50 @@ inline bool IsPlayerUnderground(BlockSource* region, int px, int py, int pz) {
     int enclosedColumns = 0;
     int offsets[5][2] = {{0,0}, {1,0}, {-1,0}, {0,1}, {0,-1}};
 
-    auto isStructuralBlock = [](Block const& block) {
-        if (block.isAir()) return false;
-        std::string name = block.getTypeName();
-        return name.find("water") == std::string::npos &&
-            name.find("leaves") == std::string::npos &&
-            name.find("log") == std::string::npos;
-    };
-
     for (auto& off : offsets) {
         int sampleX = px + off[0];
         int sampleZ = pz + off[1];
+        int sampleY = std::clamp(py, kMinWorldY, kMaxWorldY);
         bool hasCeiling = false;
         bool hasFloor = false;
+        bool hasWaterAbove = false;
         int skyLight = 15;
 
         try {
-            BlockPos lightPos(sampleX, std::clamp(py + 1, kMinWorldY, kMaxWorldY), sampleZ);
+            BlockPos lightPos(sampleX, std::clamp(sampleY + 1, kMinWorldY, kMaxWorldY), sampleZ);
             if (!region->hasChunksAt(lightPos, 0, false)) continue;
             skyLight = region->getSkylightBrightness(lightPos);
+            hasWaterAbove = IsCaveWaterBlock(region->getBlock(BlockPos(sampleX, sampleY, sampleZ))) ||
+                IsCaveWaterBlock(region->getBlock(lightPos));
 
             for (int distance = 1; distance <= kVerticalRange && (!hasCeiling || !hasFloor); ++distance) {
-                int upperY = py + distance;
-                if (!hasCeiling && upperY <= kMaxWorldY &&
-                    isStructuralBlock(region->getBlock(BlockPos(sampleX, upperY, sampleZ)))) {
-                    hasCeiling = true;
+                int upperY = sampleY + distance;
+                if (upperY <= kMaxWorldY) {
+                    Block const& upperBlock = region->getBlock(BlockPos(sampleX, upperY, sampleZ));
+                    hasWaterAbove = hasWaterAbove || IsCaveWaterBlock(upperBlock);
+                    if (!hasCeiling && !IsCavePassableBlock(upperBlock)) {
+                        hasCeiling = true;
+                    }
                 }
 
-                int lowerY = py - distance;
-                if (!hasFloor && lowerY >= kMinWorldY &&
-                    isStructuralBlock(region->getBlock(BlockPos(sampleX, lowerY, sampleZ)))) {
-                    hasFloor = true;
+                int lowerY = sampleY - distance;
+                if (!hasFloor && lowerY >= kMinWorldY) {
+                    Block const& lowerBlock = region->getBlock(BlockPos(sampleX, lowerY, sampleZ));
+                    if (!IsCavePassableBlock(lowerBlock)) {
+                        hasFloor = true;
+                    }
                 }
             }
         } catch (...) {
             continue;
         }
 
-        if (hasCeiling || (hasFloor && skyLight <= kLowSkyLight)) ++enclosedColumns;
+        bool openWaterRoute = hasWaterAbove && HasOpenWaterRouteToSky(*region, sampleX, sampleY, sampleZ);
+        // 水列已向上确认到 192 格；遇到实体顶棚即使超过常规 20 格，也应保留含水洞穴模式。
+        bool hasWaterCeiling = hasWaterAbove && !openWaterRoute;
+        if (hasCeiling || hasWaterCeiling || (hasFloor && skyLight <= kLowSkyLight && !openWaterRoute)) {
+            ++enclosedColumns;
+        }
     }
     return enclosedColumns >= 3;
 }
@@ -994,14 +1063,14 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                             int arrZ    = dz + MAP_DATA_RADIUS;
 
                             if (prevCave && caveScanPhase == CaveScanPhase::SeedAirColumns) {
-                                // 全图从同一个 Top Y 向下找空气种子，避免每列选择最近空气造成高度跳变。
+                                // 全图从同一个 Top Y 向下找开放通道，水体和植被不会形成黑墙。
                                 int channelDrop = -1;
                                 if (isChunkLoaded(targetX, targetZ)) {
                                     try {
                                         for (int drop = 0; drop <= kCaveLayerAirSearchDepth; ++drop) {
                                             int candidateY = currentCaveTopY - drop;
                                             if (candidateY < -64) break;
-                                            if (region.getBlock(BlockPos(targetX, candidateY, targetZ)).isAir()) {
+                                            if (IsCavePassableBlock(region.getBlock(BlockPos(targetX, candidateY, targetZ)))) {
                                                 channelDrop = drop;
                                                 break;
                                             }
@@ -1012,7 +1081,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                                 }
                                 caveChannelDrops[arrX][arrZ] = static_cast<signed char>(channelDrop);
                             } else if (prevCave) {
-                                // 阶段二：只解析命中的空气列，从固定 Top Y 向下选择第一条可见通道。
+                                // 阶段二：只解析命中的开放列，从固定 Top Y 向下选择第一条可见通道。
                                 mce::Color caveColor(0, 0, 0, 1);
                                 int floorY = currentScanY;
                                 int channelY = currentScanY;
@@ -1038,12 +1107,11 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                                                 int candidateY = channelY - drop;
                                                 if (candidateY < -64) break;
                                                 Block const& floorBlock = region.getBlock(BlockPos(targetX, candidateY, targetZ));
-                                                if (floorBlock.isAir()) continue;
+                                                if (IsCavePassableBlock(floorBlock)) continue;
 
                                                 foundFloor = true;
                                                 floorY = candidateY;
                                                 std::string floorName = floorBlock.getTypeName();
-                                                isWaterCell = floorName.find("water") != std::string::npos;
                                                 int cellX = targetX >> 2;
                                                 int cellZ = targetZ >> 2;
                                                 if (cellX != s_biomeCellX || cellZ != s_biomeCellZ) {
