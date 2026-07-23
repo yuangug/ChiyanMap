@@ -61,7 +61,14 @@ namespace MapRenderState {
     inline std::string externalCompassDeviceName = "MCOMPASS";
     inline int externalCompassIntervalMs = 30;
     inline float externalCompassMinDelta = 0.2f;
-    inline std::atomic<int> externalCompassStatus{0}; // 0=disabled,1=scanning,2=connecting,3=connected,4=retry
+    inline constexpr int ExternalCompassDisabled = 0;
+    inline constexpr int ExternalCompassScanning = 1;
+    inline constexpr int ExternalCompassConnecting = 2;
+    inline constexpr int ExternalCompassConnected = 3;
+    inline constexpr int ExternalCompassRetryingScan = 4;
+    inline constexpr int ExternalCompassRetryingConnect = 5;
+    inline constexpr int ExternalCompassRetryingWrite = 6;
+    inline std::atomic<int> externalCompassStatus{ExternalCompassDisabled};
 }
 
 // 【全球探索级】：匹配 16 区块能见度的究极扫描半径（513x513个方块）！

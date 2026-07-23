@@ -147,10 +147,12 @@ namespace DX11Hook {
 
     inline ImVec4 ExternalCompassStatusColor() {
         switch (MapRenderState::externalCompassStatus.load()) {
-        case 1:
-        case 2: return OreColor(234, 197, 79);
-        case 3: return OreColor(108, 214, 140);
-        case 4: return OreColor(220, 92, 86);
+        case MapRenderState::ExternalCompassScanning:
+        case MapRenderState::ExternalCompassConnecting: return OreColor(234, 197, 79);
+        case MapRenderState::ExternalCompassConnected: return OreColor(108, 214, 140);
+        case MapRenderState::ExternalCompassRetryingScan:
+        case MapRenderState::ExternalCompassRetryingConnect:
+        case MapRenderState::ExternalCompassRetryingWrite: return OreColor(220, 92, 86);
         default: return OreColor(145, 153, 160);
         }
     }
@@ -197,10 +199,12 @@ namespace DX11Hook {
 
     inline const char* ExternalCompassStatusText() {
         switch (MapRenderState::externalCompassStatus.load()) {
-        case 1: return "scanning";
-        case 2: return "connecting";
-        case 3: return "connected";
-        case 4: return "retrying";
+        case MapRenderState::ExternalCompassScanning: return "scanning";
+        case MapRenderState::ExternalCompassConnecting: return "connecting";
+        case MapRenderState::ExternalCompassConnected: return "connected";
+        case MapRenderState::ExternalCompassRetryingScan: return "retrying scan";
+        case MapRenderState::ExternalCompassRetryingConnect: return "retrying connect";
+        case MapRenderState::ExternalCompassRetryingWrite: return "retrying write";
         default: return "disabled";
         }
     }
