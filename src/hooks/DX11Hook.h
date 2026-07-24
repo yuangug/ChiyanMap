@@ -139,6 +139,33 @@ namespace DX11Hook {
         ImGui::Separator();
     }
 
+    inline bool ModernMapToggle(const char* label, bool* value) {
+        constexpr float toggleWidth = 42.0f;
+        constexpr float toggleHeight = 22.0f;
+        constexpr float rowHeight = 30.0f;
+
+        ImVec2 rowPos = ImGui::GetCursorScreenPos();
+        float rowWidth = ImGui::GetContentRegionAvail().x;
+        ImGui::InvisibleButton(label, ImVec2(rowWidth, rowHeight));
+        bool changed = ImGui::IsItemClicked();
+        if (changed) *value = !*value;
+
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        bool hovered = ImGui::IsItemHovered();
+        ImU32 textColor = hovered ? IM_COL32(244, 247, 250, 255) : IM_COL32(210, 216, 222, 255);
+        drawList->AddText(ImVec2(rowPos.x, rowPos.y + 6.0f), textColor, label);
+
+        ImVec2 trackMin(rowPos.x + rowWidth - toggleWidth, rowPos.y + 4.0f);
+        ImVec2 trackMax(trackMin.x + toggleWidth, trackMin.y + toggleHeight);
+        ImU32 trackColor = *value ? IM_COL32(58, 167, 102, 255) : IM_COL32(74, 80, 87, 255);
+        if (hovered) trackColor = *value ? IM_COL32(70, 185, 116, 255) : IM_COL32(92, 100, 108, 255);
+        drawList->AddRectFilled(trackMin, trackMax, trackColor, 5.0f);
+
+        float knobX = *value ? trackMax.x - 18.0f : trackMin.x + 2.0f;
+        drawList->AddRectFilled(ImVec2(knobX, trackMin.y + 2.0f), ImVec2(knobX + 16.0f, trackMax.y - 2.0f), IM_COL32(239, 244, 247, 255), 3.0f);
+        return changed;
+    }
+
     inline void OreTag(const char* text, ImVec4 color) {
         ImGui::PushStyleColor(ImGuiCol_Text, color);
         ImGui::Text("[%s]", text);
@@ -2036,32 +2063,66 @@ namespace DX11Hook {
 
         float hoverWx = g_smoothPX + (io.MousePos.x - cx - MapRenderState::bigMapOffsetX) / MapRenderState::bigMapZoom;
         float hoverWz = g_smoothPZ + (io.MousePos.y - cy - MapRenderState::bigMapOffsetZ) / MapRenderState::bigMapZoom;
+        const bool modernMapUI = MapRenderState::useModernUI;
 
         char infoBuf[256];
         snprintf(infoBuf, sizeof(infoBuf), LanguageManager::GetText("BIGMAP_TITLE"), MapRenderState::bigMapZoom);
-        draw_list->AddText(ImVec2(20, 20), IM_COL32(255, 200, 50, 255), infoBuf);
-        draw_list->AddText(ImVec2(20, 45), IM_COL32(200, 200, 200, 255), LanguageManager::GetText("BIGMAP_HELP"));
+        if (modernMapUI) {
+            ImVec2 titleMin(20.0f, 20.0f);
+            ImVec2 titleMax(410.0f, 78.0f);
+            draw_list->AddRectFilled(titleMin, titleMax, IM_COL32(18, 23, 28, 236), 6.0f);
+            draw_list->AddRect(titleMin, titleMax, IM_COL32(65, 149, 194, 170), 6.0f, 0, 1.0f);
+            draw_list->AddText(ImVec2(34.0f, 31.0f), IM_COL32(125, 205, 246, 255), infoBuf);
+            draw_list->AddText(ImVec2(34.0f, 53.0f), IM_COL32(174, 185, 195, 255), LanguageManager::GetText("BIGMAP_HELP"));
+        } else {
+            draw_list->AddText(ImVec2(20, 20), IM_COL32(255, 200, 50, 255), infoBuf);
+            draw_list->AddText(ImVec2(20, 45), IM_COL32(200, 200, 200, 255), LanguageManager::GetText("BIGMAP_HELP"));
+        }
         
         snprintf(infoBuf, sizeof(infoBuf), LanguageManager::GetText("CURSOR_POS"), (int)std::floor(hoverWx), (int)std::floor(hoverWz));
         ImVec2 textSize = ImGui::CalcTextSize(infoBuf);
-        draw_list->AddRectFilled(ImVec2(io.DisplaySize.x / 2 - textSize.x / 2 - 15, io.DisplaySize.y - 45), 
-                                 ImVec2(io.DisplaySize.x / 2 + textSize.x / 2 + 15, io.DisplaySize.y - 10), 
-                                 IM_COL32(0, 0, 0, 180), 5.0f);
-        draw_list->AddText(ImVec2(io.DisplaySize.x / 2 - textSize.x / 2, io.DisplaySize.y - 35), IM_COL32(255, 255, 255, 255), infoBuf);
+        float cursorBarTop = modernMapUI ? io.DisplaySize.y - 50.0f : io.DisplaySize.y - 45.0f;
+        float cursorBarBottom = modernMapUI ? io.DisplaySize.y - 12.0f : io.DisplaySize.y - 10.0f;
+        ImU32 cursorBarColor = modernMapUI ? IM_COL32(18, 23, 28, 236) : IM_COL32(0, 0, 0, 180);
+        draw_list->AddRectFilled(ImVec2(io.DisplaySize.x / 2 - textSize.x / 2 - 15, cursorBarTop),
+                                 ImVec2(io.DisplaySize.x / 2 + textSize.x / 2 + 15, cursorBarBottom),
+                                 cursorBarColor, modernMapUI ? 6.0f : 5.0f);
+        if (modernMapUI) {
+            draw_list->AddRect(ImVec2(io.DisplaySize.x / 2 - textSize.x / 2 - 15, cursorBarTop),
+                               ImVec2(io.DisplaySize.x / 2 + textSize.x / 2 + 15, cursorBarBottom),
+                               IM_COL32(73, 86, 98, 190), 6.0f, 0, 1.0f);
+        }
+        draw_list->AddText(ImVec2(io.DisplaySize.x / 2 - textSize.x / 2, modernMapUI ? io.DisplaySize.y - 39.0f : io.DisplaySize.y - 35.0f),
+                           IM_COL32(255, 255, 255, 255), infoBuf);
 
         char biomeBuf[512];
         snprintf(biomeBuf, sizeof(biomeBuf), LanguageManager::GetText("BIOME_LABEL"), MapRenderState::currentBiomeName.c_str());
         ImVec2 biomeTextSize = ImGui::CalcTextSize(biomeBuf);
-        draw_list->AddRectFilled(ImVec2(io.DisplaySize.x / 2 - biomeTextSize.x / 2 - 20, 15), 
-                                 ImVec2(io.DisplaySize.x / 2 + biomeTextSize.x / 2 + 20, 50), 
-                                 IM_COL32(0, 0, 0, 180), 5.0f);
-        draw_list->AddText(ImVec2(io.DisplaySize.x / 2 - biomeTextSize.x / 2, 25), IM_COL32(180, 255, 180, 255), biomeBuf);
+        float biomeTop = modernMapUI ? 20.0f : 15.0f;
+        float biomeBottom = modernMapUI ? 58.0f : 50.0f;
+        ImU32 biomeBackground = modernMapUI ? IM_COL32(18, 23, 28, 236) : IM_COL32(0, 0, 0, 180);
+        draw_list->AddRectFilled(ImVec2(io.DisplaySize.x / 2 - biomeTextSize.x / 2 - 20, biomeTop),
+                                 ImVec2(io.DisplaySize.x / 2 + biomeTextSize.x / 2 + 20, biomeBottom),
+                                 biomeBackground, modernMapUI ? 6.0f : 5.0f);
+        if (modernMapUI) {
+            draw_list->AddRect(ImVec2(io.DisplaySize.x / 2 - biomeTextSize.x / 2 - 20, biomeTop),
+                               ImVec2(io.DisplaySize.x / 2 + biomeTextSize.x / 2 + 20, biomeBottom),
+                               IM_COL32(73, 86, 98, 190), 6.0f, 0, 1.0f);
+        }
+        draw_list->AddText(ImVec2(io.DisplaySize.x / 2 - biomeTextSize.x / 2, modernMapUI ? 31.0f : 25.0f),
+                           modernMapUI ? IM_COL32(155, 225, 181, 255) : IM_COL32(180, 255, 180, 255), biomeBuf);
 
-        ImGui::SetCursorPos(ImVec2(io.DisplaySize.x - 290, 20));
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.6f));
-        ImGui::BeginChild("MapSidebar", ImVec2(270, 190), true, ImGuiWindowFlags_NoScrollbar);
+        float sidebarWidth = modernMapUI ? 312.0f : 270.0f;
+        float sidebarHeight = modernMapUI ? 204.0f : 190.0f;
+        ImGui::SetCursorPos(ImVec2(io.DisplaySize.x - sidebarWidth - 20.0f, 20.0f));
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, modernMapUI ? OreColor(18, 23, 28, 236) : ImVec4(0.0f, 0.0f, 0.0f, 0.6f));
+        if (modernMapUI) {
+            ImGui::PushStyleColor(ImGuiCol_Border, OreColor(65, 149, 194, 170));
+            ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0f);
+        }
+        ImGui::BeginChild("MapSidebar", ImVec2(sidebarWidth, sidebarHeight), true, ImGuiWindowFlags_NoScrollbar);
         
-        ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), LanguageManager::GetText("SIDEBAR_PLAYER_STATUS"));
+        ImGui::TextColored(modernMapUI ? OreColor(125, 205, 246) : ImVec4(0.4f, 0.8f, 1.0f, 1.0f), LanguageManager::GetText("SIDEBAR_PLAYER_STATUS"));
         ImGui::Separator();
         ImGui::Text(LanguageManager::GetText("PLAYER_POS_X"), g_playerBlockX);
         ImGui::Text(LanguageManager::GetText("PLAYER_POS_Y"), (int)g_playerY);
@@ -2071,8 +2132,9 @@ namespace DX11Hook {
         
         // 并排摆放 [视角回中] 主按钮与 [⚙] 齿轮设置按钮
         float availWidth = ImGui::GetContentRegionAvail().x;
+        float actionHeight = modernMapUI ? 38.0f : 35.0f;
         PushOreButtonStyle(OreButtonKind::Primary);
-        if (ImGui::Button(LanguageManager::GetText("CENTER_CAMERA"), ImVec2(availWidth - 42.0f, 35.0f))) {
+        if (ImGui::Button(LanguageManager::GetText("CENTER_CAMERA"), ImVec2(availWidth - 46.0f, actionHeight))) {
             MapRenderState::bigMapOffsetX = 0.0f;
             MapRenderState::bigMapOffsetZ = 0.0f;
         }
@@ -2080,12 +2142,18 @@ namespace DX11Hook {
         ImGui::SameLine();
         
         PushOreButtonStyle(OreButtonKind::Warning);
-        if (ImGui::Button("\xe2\x9a\x99", ImVec2(35.0f, 35.0f))) {
+        if (ImGui::Button("\xe2\x9a\x99", ImVec2(38.0f, actionHeight))) {
             ImGui::OpenPopup("SettingsPopup");
         }
         PopOreButtonStyle();
         
-        ImGui::SetNextWindowSize(ImVec2(380, 500));
+        ImGui::SetNextWindowSize(ImVec2(modernMapUI ? 420.0f : 380.0f, modernMapUI ? 530.0f : 500.0f));
+        if (modernMapUI) {
+            ImGui::PushStyleColor(ImGuiCol_PopupBg, OreColor(18, 23, 28, 250));
+            ImGui::PushStyleColor(ImGuiCol_Border, OreColor(65, 149, 194, 200));
+            ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 6.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 14.0f));
+        }
         if (ImGui::BeginPopup("SettingsPopup")) {
             OreSectionHeader(LanguageManager::GetText("SIDEBAR_OPS"));
             
@@ -2098,7 +2166,10 @@ namespace DX11Hook {
             if (ImGui::Checkbox(LanguageManager::GetText("ROTATE_MAP"), &MapRenderState::bigMapRotateWithPlayer)) {
                 LanguageManager::SaveConfig();
             }
-            if (ImGui::Checkbox(LanguageManager::GetText("USE_MODERN_UI"), &MapRenderState::useModernUI)) {
+            bool modernUiChanged = modernMapUI
+                ? ModernMapToggle(LanguageManager::GetText("USE_MODERN_UI"), &MapRenderState::useModernUI)
+                : ImGui::Checkbox(LanguageManager::GetText("USE_MODERN_UI"), &MapRenderState::useModernUI);
+            if (modernUiChanged) {
                 LanguageManager::SaveConfig();
             }
             ImGui::Spacing();
@@ -2180,8 +2251,16 @@ namespace DX11Hook {
             
             ImGui::EndPopup();
         }
+        if (modernMapUI) {
+            ImGui::PopStyleVar(2);
+            ImGui::PopStyleColor(2);
+        }
         
         ImGui::EndChild();
+        if (modernMapUI) {
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor();
+        }
         ImGui::PopStyleColor();
         
         static float rcWorldX = 0.0f;
