@@ -2333,9 +2333,6 @@ namespace DX11Hook {
             snprintf(modeBuf, sizeof(modeBuf), "%s  \xc2\xb7  %s", projectionName, LanguageManager::GetText("MODERN_MAP_UPDATING"));
             sidebarDrawList->AddText(ImVec2(mapModePos.x + 26.0f, mapModePos.y + 7.0f), IM_COL32(236, 240, 242, 255), modeBuf);
             ImGui::Dummy(ImVec2(contentWidth, 30.0f));
-            ImGui::EndChild();
-            ImGui::PopStyleVar(2);
-            ImGui::PopStyleColor(2);
 
             if (ImGui::IsPopupOpen("SettingsPopup")) {
                 draw_list->AddRectFilled(ImVec2(0.0f, 0.0f), io.DisplaySize, IM_COL32(0, 0, 0, 72));
@@ -2350,6 +2347,10 @@ namespace DX11Hook {
                 RenderModernMapSettingsContent();
                 ImGui::EndPopup();
             }
+            ImGui::PopStyleVar(2);
+            ImGui::PopStyleColor(2);
+
+            ImGui::EndChild();
             ImGui::PopStyleVar(2);
             ImGui::PopStyleColor(2);
         } else {
