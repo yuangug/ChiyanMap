@@ -207,6 +207,62 @@ namespace DX11Hook {
         return changed;
     }
 
+    inline bool ModernIconButton(const char* id, const char* icon, const char* tooltip, ImU32 color, ImU32 hoverColor, float size = 32.0f) {
+        ImVec2 pos = ImGui::GetCursorScreenPos();
+        ImGui::InvisibleButton(id, ImVec2(size, size));
+        bool hovered = ImGui::IsItemHovered();
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        drawList->AddRectFilled(pos, ImVec2(pos.x + size, pos.y + size), hovered ? hoverColor : color, 6.0f);
+        ImVec2 iconSize = ImGui::CalcTextSize(icon);
+        drawList->AddText(ImVec2(pos.x + (size - iconSize.x) * 0.5f, pos.y + (size - iconSize.y) * 0.5f), IM_COL32(236, 240, 242, 255), icon);
+        if (hovered && tooltip && tooltip[0] != '\0') ImGui::SetTooltip("%s", tooltip);
+        return ImGui::IsItemClicked();
+    }
+
+    inline bool ModernWaypointColorPalette(float* color) {
+        static const ImVec4 palette[] = {
+            OreColor(225, 29, 72), OreColor(244, 114, 182), OreColor(251, 146, 60), OreColor(250, 204, 21), OreColor(132, 204, 22),
+            OreColor(16, 185, 129), OreColor(14, 165, 233), OreColor(59, 130, 246), OreColor(139, 92, 246), OreColor(167, 139, 250)
+        };
+        constexpr float swatchWidth = 24.0f;
+        constexpr float swatchHeight = 28.0f;
+        constexpr float overlap = 7.0f;
+        ImVec2 start = ImGui::GetCursorScreenPos();
+        int hoveredIndex = -1;
+        int clickedIndex = -1;
+
+        for (int index = 0; index < 10; ++index) {
+            ImGui::SetCursorScreenPos(ImVec2(start.x + index * (swatchWidth - overlap), start.y));
+            std::string id = "##ModernWaypointColor" + std::to_string(index);
+            ImGui::InvisibleButton(id.c_str(), ImVec2(swatchWidth, swatchHeight));
+            if (ImGui::IsItemHovered()) hoveredIndex = index;
+            if (ImGui::IsItemClicked()) clickedIndex = index;
+        }
+
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        auto drawSwatch = [&](int index) {
+            float scale = index == hoveredIndex ? 1.28f : ((index == hoveredIndex - 1 || index == hoveredIndex + 1) ? 1.12f : 1.0f);
+            float width = swatchWidth * scale;
+            float height = swatchHeight * scale;
+            float x = start.x + index * (swatchWidth - overlap) - (width - swatchWidth) * 0.5f;
+            float y = start.y - (height - swatchHeight) * 0.5f;
+            ImU32 fill = ImGui::ColorConvertFloat4ToU32(palette[index]);
+            drawList->AddRectFilled(ImVec2(x, y), ImVec2(x + width, y + height), fill, 6.0f);
+            drawList->AddRect(ImVec2(x, y), ImVec2(x + width, y + height), IM_COL32(236, 240, 242, index == hoveredIndex ? 255 : 130), 6.0f, 0, index == hoveredIndex ? 2.0f : 1.0f);
+        };
+        for (int index = 0; index < 10; ++index) {
+            if (index != hoveredIndex) drawSwatch(index);
+        }
+        if (hoveredIndex >= 0) drawSwatch(hoveredIndex);
+
+        ImGui::SetCursorScreenPos(ImVec2(start.x, start.y + swatchHeight + 8.0f));
+        if (clickedIndex < 0) return false;
+        color[0] = palette[clickedIndex].x;
+        color[1] = palette[clickedIndex].y;
+        color[2] = palette[clickedIndex].z;
+        return true;
+    }
+
     inline void OreTag(const char* text, ImVec4 color) {
         ImGui::PushStyleColor(ImGuiCol_Text, color);
         ImGui::Text("[%s]", text);
@@ -1851,6 +1907,65 @@ namespace DX11Hook {
             ImGui::OpenPopup(modalId);
             trigger = false;
         }
+        if (MapRenderState::useModernUI) {
+            ImGui::SetNextWindowSize(ImVec2(420.0f, 210.0f), ImGuiCond_Appearing);
+            ImGui::PushStyleColor(ImGuiCol_PopupBg, OreColor(25, 29, 34));
+            ImGui::PushStyleColor(ImGuiCol_Border, OreColor(79, 90, 105));
+            ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 8.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18.0f, 18.0f));
+            if (ImGui::BeginPopupModal(modalId, NULL, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize)) {
+                static char modernRenameBuf[256] = "";
+                static bool modernInitialized = false;
+                Waypoint targetWaypoint;
+                bool found = false;
+                {
+                    std::lock_guard<std::mutex> lock(WaypointManager::g_wpMutex);
+                    for (const auto& waypoint : WaypointManager::g_waypoints) {
+                        if (waypoint.id == wpId) {
+                            targetWaypoint = waypoint;
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if (!found) {
+                    ImGui::CloseCurrentPopup();
+                    modernInitialized = false;
+                } else {
+                    if (!modernInitialized) {
+                        snprintf(modernRenameBuf, sizeof(modernRenameBuf), "%s", targetWaypoint.name.c_str());
+                        modernInitialized = true;
+                    }
+                    ImGui::TextColored(OreColor(236, 240, 242), "%s", LanguageManager::GetText("RENAME_WP"));
+                    ImGui::Spacing();
+                    ImGui::InputText(LanguageManager::GetText("WP_NAME"), modernRenameBuf, sizeof(modernRenameBuf));
+                    ImGui::Spacing();
+                    if (ModernFullWidthButton("##ModernRenameSave", LanguageManager::GetText("WP_SAVE"), IM_COL32(59, 130, 246, 255), IM_COL32(82, 149, 250, 255))) {
+                        {
+                            std::lock_guard<std::mutex> lock(WaypointManager::g_wpMutex);
+                            for (auto& waypoint : WaypointManager::g_waypoints) {
+                                if (waypoint.id == wpId) {
+                                    waypoint.name = modernRenameBuf;
+                                    break;
+                                }
+                            }
+                        }
+                        WaypointManager::SaveWaypoints();
+                        modernInitialized = false;
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::Spacing();
+                    if (ModernFullWidthButton("##ModernRenameCancel", LanguageManager::GetText("WP_CANCEL"), IM_COL32(34, 40, 49, 255), IM_COL32(46, 55, 66, 255))) {
+                        modernInitialized = false;
+                        ImGui::CloseCurrentPopup();
+                    }
+                }
+                ImGui::EndPopup();
+            }
+            ImGui::PopStyleVar(2);
+            ImGui::PopStyleColor(2);
+            return;
+        }
         if (ImGui::BeginPopupModal(modalId, NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
             static char renameBuf[256] = "";
             static bool initialized = false;
@@ -2771,7 +2886,175 @@ namespace DX11Hook {
         ImGui::End();
     }
 
+    inline void RenderModernWaypointUI() {
+        ImGuiIO& io = ImGui::GetIO();
+        ImGui::SetNextWindowSize(ImVec2(900.0f, 620.0f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, OreColor(25, 29, 34, 250));
+        ImGui::PushStyleColor(ImGuiCol_Border, OreColor(79, 90, 105));
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, OreColor(18, 22, 27, 210));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18.0f, 18.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 7.0f);
+
+        if (ImGui::Begin("##ModernWaypointManager", &MapRenderState::showWaypointUI, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoTitleBar)) {
+            ImGui::TextColored(OreColor(236, 240, 242), "%s", LanguageManager::GetText("MODERN_WAYPOINT_MANAGER"));
+            ImGui::Spacing();
+
+            static bool showAddPopup = false;
+            static char searchBuf[256] = "";
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, OreColor(34, 40, 49));
+            ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, OreColor(43, 51, 62));
+            ImGui::PushStyleColor(ImGuiCol_FrameBgActive, OreColor(43, 51, 62));
+            ImGui::PushStyleColor(ImGuiCol_Border, OreColor(79, 90, 105));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 7.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12.0f, 10.0f));
+            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 150.0f);
+            ImGui::InputTextWithHint("##ModernWaypointSearch", LanguageManager::GetText("SEARCH_HINT"), searchBuf, sizeof(searchBuf));
+            ImGui::PopItemWidth();
+            ImGui::PopStyleVar(2);
+            ImGui::PopStyleColor(4);
+
+            ImGui::SameLine();
+            ImVec2 addButtonPos = ImGui::GetCursorScreenPos();
+            ImGui::InvisibleButton("##ModernAddWaypoint", ImVec2(132.0f, 42.0f));
+            bool addHovered = ImGui::IsItemHovered();
+            ImDrawList* drawList = ImGui::GetWindowDrawList();
+            drawList->AddRectFilled(addButtonPos, ImVec2(addButtonPos.x + 132.0f, addButtonPos.y + 42.0f), addHovered ? IM_COL32(82, 149, 250, 255) : IM_COL32(59, 130, 246, 255), 7.0f);
+            const char* addLabel = LanguageManager::GetText("MODERN_NEW_WAYPOINT");
+            ImVec2 addLabelSize = ImGui::CalcTextSize(addLabel);
+            drawList->AddText(ImVec2(addButtonPos.x + (132.0f - addLabelSize.x) * 0.5f, addButtonPos.y + 12.0f), IM_COL32(236, 240, 242, 255), addLabel);
+            if (ImGui::IsItemClicked()) showAddPopup = true;
+
+            ImGui::Spacing();
+            ImGui::BeginChild("##ModernWaypointList", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_NoScrollbar);
+            std::string toDelete;
+            bool toggled = false;
+            bool triggerTeleport = false;
+            static std::string renameId;
+            static bool triggerRename = false;
+            std::string query = searchBuf;
+            for (char& c : query) if (c >= 'A' && c <= 'Z') c += 32;
+            int visibleCount = 0;
+
+            {
+                std::lock_guard<std::mutex> lock(WaypointManager::g_wpMutex);
+                for (auto& waypoint : WaypointManager::g_waypoints) {
+                    std::string lowerName = waypoint.name;
+                    for (char& c : lowerName) if (c >= 'A' && c <= 'Z') c += 32;
+                    if (!query.empty() && lowerName.find(query) == std::string::npos) continue;
+                    ++visibleCount;
+                    ImGui::PushID(waypoint.id.c_str());
+
+                    ImVec2 rowPos = ImGui::GetCursorScreenPos();
+                    float rowWidth = ImGui::GetContentRegionAvail().x;
+                    drawList->AddRectFilled(rowPos, ImVec2(rowPos.x + rowWidth, rowPos.y + 68.0f), IM_COL32(34, 40, 49, 255), 7.0f);
+                    drawList->AddCircleFilled(ImVec2(rowPos.x + 18.0f, rowPos.y + 25.0f), 7.0f, ImGui::ColorConvertFloat4ToU32(ImVec4(waypoint.r, waypoint.g, waypoint.b, 1.0f)));
+                    drawList->AddText(ImVec2(rowPos.x + 34.0f, rowPos.y + 12.0f), IM_COL32(236, 240, 242, 255), waypoint.name.c_str());
+                    char coordinateBuf[96];
+                    snprintf(coordinateBuf, sizeof(coordinateBuf), "X %d   Y %d   Z %d", waypoint.x, waypoint.y, waypoint.z);
+                    drawList->AddText(ImVec2(rowPos.x + 34.0f, rowPos.y + 36.0f), IM_COL32(135, 144, 154, 255), coordinateBuf);
+
+                    float actionX = rowPos.x + rowWidth - 144.0f;
+                    ImGui::SetCursorScreenPos(ImVec2(actionX, rowPos.y + 18.0f));
+                    const char* visibilityIcon = waypoint.enabled ? "\xe2\x97\x89" : "\xe2\x97\x8b";
+                    if (ModernIconButton("##WaypointVisible", visibilityIcon, LanguageManager::GetText("WP_LIST_SHOW"), IM_COL32(34, 40, 49, 255), IM_COL32(46, 55, 66, 255))) {
+                        waypoint.enabled = !waypoint.enabled;
+                        toggled = true;
+                    }
+                    ImGui::SetCursorScreenPos(ImVec2(actionX + 36.0f, rowPos.y + 18.0f));
+                    if (ModernIconButton("##WaypointRename", "\xe2\x9c\x8e", LanguageManager::GetText("WP_LIST_RENAME"), IM_COL32(234, 197, 79, 255), IM_COL32(247, 211, 101, 255))) {
+                        renameId = waypoint.id;
+                        triggerRename = true;
+                    }
+                    ImGui::SetCursorScreenPos(ImVec2(actionX + 72.0f, rowPos.y + 18.0f));
+                    if (ModernIconButton("##WaypointTeleport", "\xe2\x8c\x96", LanguageManager::GetText("WP_LIST_TELEPORT"), IM_COL32(59, 130, 246, 255), IM_COL32(82, 149, 250, 255))) {
+                        MapRenderState::tpTargetX = (float)waypoint.x + 0.5f;
+                        MapRenderState::tpTargetY = (float)waypoint.y;
+                        MapRenderState::tpTargetZ = (float)waypoint.z + 0.5f;
+                        MapRenderState::triggerTeleport.store(true);
+                        triggerTeleport = true;
+                    }
+                    ImGui::SetCursorScreenPos(ImVec2(actionX + 108.0f, rowPos.y + 18.0f));
+                    if (ModernIconButton("##WaypointDelete", "\xc3\x97", LanguageManager::GetText("WP_LIST_DELETE"), IM_COL32(182, 46, 46, 255), IM_COL32(226, 34, 34, 255))) {
+                        toDelete = waypoint.id;
+                    }
+
+                    ImGui::SetCursorScreenPos(ImVec2(rowPos.x, rowPos.y + 76.0f));
+                    ImGui::PopID();
+                }
+            }
+
+            if (visibleCount == 0) {
+                ImGui::Dummy(ImVec2(1.0f, 80.0f));
+                float emptyWidth = ImGui::CalcTextSize(LanguageManager::GetText("MODERN_WAYPOINT_EMPTY")).x;
+                ImGui::SetCursorPosX((ImGui::GetWindowWidth() - emptyWidth) * 0.5f);
+                ImGui::TextDisabled("%s", LanguageManager::GetText("MODERN_WAYPOINT_EMPTY"));
+            }
+            if (!toDelete.empty()) {
+                WaypointManager::RemoveWaypoint(toDelete);
+                WaypointManager::SaveWaypoints();
+            } else if (toggled) {
+                WaypointManager::SaveWaypoints();
+            }
+            ImGui::EndChild();
+
+            RenderRenameModal((std::string(LanguageManager::GetText("RENAME_WP")) + "##ModernWaypointRename").c_str(), renameId, triggerRename);
+            if (MapRenderState::triggerAddWaypoint) {
+                showAddPopup = true;
+                MapRenderState::triggerAddWaypoint = false;
+            }
+            if (showAddPopup) ImGui::OpenPopup("##ModernNewWaypoint");
+
+            ImGui::SetNextWindowSize(ImVec2(460.0f, 360.0f), ImGuiCond_Appearing);
+            if (ImGui::BeginPopupModal("##ModernNewWaypoint", &showAddPopup, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize)) {
+                static char nameBuf[256] = "";
+                static int position[3] = {0, 0, 0};
+                static float color[3] = {1.0f, 0.3f, 0.3f};
+                if (ImGui::IsWindowAppearing()) {
+                    nameBuf[0] = '\0';
+                    position[0] = MapRenderState::addWaypointX != -999999 ? MapRenderState::addWaypointX : g_playerBlockX;
+                    position[1] = MapRenderState::addWaypointY != -999999 ? MapRenderState::addWaypointY : (int)g_playerY;
+                    position[2] = MapRenderState::addWaypointZ != -999999 ? MapRenderState::addWaypointZ : g_playerBlockZ;
+                    MapRenderState::addWaypointX = -999999;
+                    MapRenderState::addWaypointY = -999999;
+                    MapRenderState::addWaypointZ = -999999;
+                }
+                ImGui::TextColored(OreColor(236, 240, 242), "%s", LanguageManager::GetText("MODERN_NEW_WAYPOINT"));
+                ImGui::Spacing();
+                ImGui::InputText(LanguageManager::GetText("WP_NAME"), nameBuf, sizeof(nameBuf));
+                ImGui::InputInt3("X / Y / Z", position);
+                ImGui::TextDisabled("%s", LanguageManager::GetText("WP_COLOR"));
+                ModernWaypointColorPalette(color);
+                ImGui::Spacing();
+                if (ModernFullWidthButton("##ModernWaypointSave", LanguageManager::GetText("WP_SAVE"), IM_COL32(59, 130, 246, 255), IM_COL32(82, 149, 250, 255))) {
+                    WaypointManager::AddWaypoint(nameBuf, position[0], position[1], position[2], color[0], color[1], color[2]);
+                    showAddPopup = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::Spacing();
+                if (ModernFullWidthButton("##ModernWaypointCancel", LanguageManager::GetText("WP_CANCEL"), IM_COL32(34, 40, 49, 255), IM_COL32(46, 55, 66, 255))) {
+                    showAddPopup = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
+
+            if (triggerTeleport) {
+                MapRenderState::showWaypointUI = false;
+                MapRenderState::showBigMap = false;
+            }
+        }
+        ImGui::End();
+        ImGui::PopStyleVar(3);
+        ImGui::PopStyleColor(3);
+    }
+
     inline void RenderImGuiWaypointUI() {
+        if (MapRenderState::useModernUI) {
+            RenderModernWaypointUI();
+            return;
+        }
         ImGui::SetNextWindowSize(ImVec2(750, 480), ImGuiCond_FirstUseEver); 
         ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2 - 375, ImGui::GetIO().DisplaySize.y / 2 - 240), ImGuiCond_FirstUseEver);
         
