@@ -139,30 +139,71 @@ namespace DX11Hook {
         ImGui::Separator();
     }
 
-    inline bool ModernMapToggle(const char* label, bool* value) {
-        constexpr float toggleWidth = 42.0f;
-        constexpr float toggleHeight = 22.0f;
-        constexpr float rowHeight = 30.0f;
+    inline void DrawModernSwitch(ImDrawList* drawList, ImVec2 pos, bool value, bool hovered) {
+        constexpr float switchWidth = 46.0f;
+        constexpr float switchHeight = 24.0f;
+        ImU32 track = value ? IM_COL32(0, 218, 80, 255) : IM_COL32(131, 131, 131, 255);
+        if (hovered) track = value ? IM_COL32(35, 231, 105, 255) : IM_COL32(151, 151, 151, 255);
+        drawList->AddRectFilled(pos, ImVec2(pos.x + switchWidth, pos.y + switchHeight), track, 12.0f);
 
-        ImVec2 rowPos = ImGui::GetCursorScreenPos();
-        float rowWidth = ImGui::GetContentRegionAvail().x;
-        ImGui::InvisibleButton(label, ImVec2(rowWidth, rowHeight));
+        float circleX = value ? pos.x + 26.0f : pos.x + 2.0f;
+        drawList->AddCircleFilled(ImVec2(circleX + 9.0f, pos.y + 12.0f), 9.0f, IM_COL32(255, 255, 255, 255));
+        drawList->AddText(ImVec2(circleX + 4.5f, pos.y + 5.0f), track, value ? "\xe2\x9c\x93" : "x");
+    }
+
+    inline bool ModernSettingCard(const char* id, const char* title, const char* detail, bool* value) {
+        constexpr float cardHeight = 54.0f;
+        ImVec2 pos = ImGui::GetCursorScreenPos();
+        float width = ImGui::GetContentRegionAvail().x;
+        ImGui::InvisibleButton(id, ImVec2(width, cardHeight));
+        bool hovered = ImGui::IsItemHovered();
         bool changed = ImGui::IsItemClicked();
         if (changed) *value = !*value;
 
         ImDrawList* drawList = ImGui::GetWindowDrawList();
+        drawList->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + cardHeight), hovered ? IM_COL32(43, 51, 62, 255) : IM_COL32(34, 40, 49, 255), 7.0f);
+        drawList->AddText(ImVec2(pos.x + 12.0f, pos.y + 6.0f), IM_COL32(236, 240, 242, 255), title);
+        drawList->AddText(ImVec2(pos.x + 12.0f, pos.y + 30.0f), IM_COL32(135, 144, 154, 255), detail);
+        DrawModernSwitch(drawList, ImVec2(pos.x + width - 58.0f, pos.y + 15.0f), *value, hovered);
+        return changed;
+    }
+
+    inline bool ModernFullWidthButton(const char* id, const char* label, ImU32 color, ImU32 hoverColor) {
+        constexpr float buttonHeight = 42.0f;
+        ImVec2 pos = ImGui::GetCursorScreenPos();
+        float width = ImGui::GetContentRegionAvail().x;
+        ImGui::InvisibleButton(id, ImVec2(width, buttonHeight));
         bool hovered = ImGui::IsItemHovered();
-        ImU32 textColor = hovered ? IM_COL32(244, 247, 250, 255) : IM_COL32(210, 216, 222, 255);
-        drawList->AddText(ImVec2(rowPos.x, rowPos.y + 6.0f), textColor, label);
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        drawList->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + buttonHeight), hovered ? hoverColor : color, 7.0f);
+        ImVec2 textSize = ImGui::CalcTextSize(label);
+        drawList->AddText(ImVec2(pos.x + (width - textSize.x) * 0.5f, pos.y + 12.0f), IM_COL32(236, 240, 242, 255), label);
+        return ImGui::IsItemClicked();
+    }
 
-        ImVec2 trackMin(rowPos.x + rowWidth - toggleWidth, rowPos.y + 4.0f);
-        ImVec2 trackMax(trackMin.x + toggleWidth, trackMin.y + toggleHeight);
-        ImU32 trackColor = *value ? IM_COL32(58, 167, 102, 255) : IM_COL32(74, 80, 87, 255);
-        if (hovered) trackColor = *value ? IM_COL32(70, 185, 116, 255) : IM_COL32(92, 100, 108, 255);
-        drawList->AddRectFilled(trackMin, trackMax, trackColor, 5.0f);
+    inline bool ModernFloatSlider(const char* id, float* value, float minValue, float maxValue) {
+        constexpr float sliderHeight = 32.0f;
+        ImVec2 pos = ImGui::GetCursorScreenPos();
+        float width = ImGui::GetContentRegionAvail().x;
+        ImGui::InvisibleButton(id, ImVec2(width, sliderHeight));
+        bool changed = false;
+        if (ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            float t = std::clamp((ImGui::GetIO().MousePos.x - (pos.x + 16.0f)) / (width - 32.0f), 0.0f, 1.0f);
+            float next = minValue + (maxValue - minValue) * t;
+            changed = std::fabs(next - *value) > 0.001f;
+            *value = next;
+        }
 
-        float knobX = *value ? trackMax.x - 18.0f : trackMin.x + 2.0f;
-        drawList->AddRectFilled(ImVec2(knobX, trackMin.y + 2.0f), ImVec2(knobX + 16.0f, trackMax.y - 2.0f), IM_COL32(239, 244, 247, 255), 3.0f);
+        float t = std::clamp((*value - minValue) / (maxValue - minValue), 0.0f, 1.0f);
+        float trackStart = pos.x + 16.0f;
+        float trackEnd = pos.x + width - 16.0f;
+        float thumbX = trackStart + (trackEnd - trackStart) * t;
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        drawList->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + sliderHeight), IM_COL32(25, 29, 34, 255), 7.0f);
+        drawList->AddRect(pos, ImVec2(pos.x + width, pos.y + sliderHeight), IM_COL32(79, 90, 105, 255), 7.0f);
+        drawList->AddRectFilled(ImVec2(trackStart, pos.y + 14.0f), ImVec2(trackEnd, pos.y + 18.0f), IM_COL32(34, 40, 49, 255), 2.0f);
+        drawList->AddRectFilled(ImVec2(trackStart, pos.y + 14.0f), ImVec2(thumbX, pos.y + 18.0f), IM_COL32(234, 197, 79, 255), 2.0f);
+        drawList->AddCircleFilled(ImVec2(thumbX, pos.y + 16.0f), 7.0f, IM_COL32(234, 197, 79, 255));
         return changed;
     }
 
@@ -1862,6 +1903,119 @@ namespace DX11Hook {
         }
     }
 
+    inline void RenderModernMapSettingsContent() {
+        ImGui::TextColored(OreColor(236, 240, 242), "%s", LanguageManager::GetText("MODERN_SETTINGS_TITLE"));
+        ImGui::Spacing();
+        ImGui::TextColored(OreColor(135, 144, 154), "%s", LanguageManager::GetText("MODERN_DISPLAY"));
+        ImGui::Spacing();
+
+        if (ModernSettingCard("##ModernShowMinimap", LanguageManager::GetText("SHOW_MINIMAP"), LanguageManager::GetText("MODERN_SHOW_MINIMAP_DETAIL"), &MapRenderState::showMiniMap)) {
+            LanguageManager::SaveConfig();
+        }
+        bool roundMinimap = !MapRenderState::isSquareMap;
+        if (ModernSettingCard("##ModernRoundMinimap", LanguageManager::GetText("MODERN_ROUND_MINIMAP"), LanguageManager::GetText("MODERN_ROUND_MINIMAP_DETAIL"), &roundMinimap)) {
+            MapRenderState::isSquareMap = !roundMinimap;
+            LanguageManager::SaveConfig();
+        }
+        if (ModernSettingCard("##ModernRotateMap", LanguageManager::GetText("ROTATE_MAP"), LanguageManager::GetText("MODERN_ROTATE_DETAIL"), &MapRenderState::bigMapRotateWithPlayer)) {
+            LanguageManager::SaveConfig();
+        }
+        if (ModernSettingCard("##ModernMapUi", LanguageManager::GetText("USE_MODERN_UI"), LanguageManager::GetText("MODERN_UI_DETAIL"), &MapRenderState::useModernUI)) {
+            LanguageManager::SaveConfig();
+        }
+
+        ImGui::Spacing();
+        ImGui::TextColored(OreColor(135, 144, 154), "%s", LanguageManager::GetText("MODERN_MINIMAP_SIZE"));
+        if (ModernFloatSlider("##ModernMinimapSize", &MapRenderState::minimapSize, 60.0f, 300.0f)) {
+            LanguageManager::SaveConfig();
+        }
+        ImGui::Spacing();
+        if (ModernFullWidthButton("##ModernAdjustPosition", LanguageManager::GetText("ADJUST_POSITION"), IM_COL32(34, 40, 49, 255), IM_COL32(46, 55, 66, 255))) {
+            MapRenderState::tempMinimapOffsetX = MapRenderState::minimapOffsetX;
+            MapRenderState::tempMinimapOffsetY = MapRenderState::minimapOffsetY;
+            MapRenderState::showPositionSettings = true;
+            MapRenderState::showBigMap = false;
+            ImGui::CloseCurrentPopup();
+            return;
+        }
+
+        ImGui::Spacing();
+        ImGui::TextColored(OreColor(135, 144, 154), "%s", LanguageManager::GetText("MODERN_BLUETOOTH"));
+        if (ModernSettingCard("##ModernCompassEnable", LanguageManager::GetText("MCOMPASS_ENABLE"), LanguageManager::GetText("MODERN_BLUETOOTH_DETAIL"), &MapRenderState::externalCompassEnabled)) {
+            LanguageManager::SaveConfig();
+            ExternalCompassSync::NotifyConfigChanged();
+        }
+
+        ImVec2 statusPos = ImGui::GetCursorScreenPos();
+        float statusWidth = ImGui::GetContentRegionAvail().x;
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        drawList->AddRectFilled(statusPos, ImVec2(statusPos.x + statusWidth, statusPos.y + 40.0f), IM_COL32(34, 40, 49, 255), 7.0f);
+        ImVec4 statusColor = ExternalCompassStatusColor();
+        drawList->AddCircleFilled(ImVec2(statusPos.x + 16.0f, statusPos.y + 20.0f), 4.0f, ImGui::ColorConvertFloat4ToU32(statusColor));
+        char statusBuf[160];
+        snprintf(statusBuf, sizeof(statusBuf), LanguageManager::GetText("MCOMPASS_STATUS"), ExternalCompassStatusText());
+        drawList->AddText(ImVec2(statusPos.x + 28.0f, statusPos.y + 11.0f), IM_COL32(236, 240, 242, 255), statusBuf);
+        ImGui::Dummy(ImVec2(statusWidth, 40.0f));
+
+        static bool externalCompassNameLoaded = false;
+        static char externalCompassNameBuf[64] = "MCOMPASS";
+        if (!externalCompassNameLoaded) {
+            strncpy_s(externalCompassNameBuf, MapRenderState::externalCompassDeviceName.c_str(), _TRUNCATE);
+            externalCompassNameLoaded = true;
+        }
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, OreColor(34, 40, 49));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, OreColor(43, 51, 62));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, OreColor(43, 51, 62));
+        ImGui::PushStyleColor(ImGuiCol_Border, OreColor(79, 90, 105));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 7.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12.0f, 10.0f));
+        ImGui::PushItemWidth(-1.0f);
+        ImGui::InputText((std::string(LanguageManager::GetText("MCOMPASS_DEVICE_NAME")) + "##ModernCompassDevice").c_str(), externalCompassNameBuf, sizeof(externalCompassNameBuf));
+        ImGui::PopItemWidth();
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor(4);
+
+        ImGui::Spacing();
+        if (ModernFullWidthButton("##ModernCompassApply", LanguageManager::GetText("MCOMPASS_APPLY"), IM_COL32(59, 130, 246, 255), IM_COL32(82, 149, 250, 255))) {
+            MapRenderState::externalCompassDeviceName = externalCompassNameBuf;
+            LanguageManager::SaveConfig();
+            ExternalCompassSync::NotifyConfigChanged();
+        }
+
+        ImGui::Spacing();
+        ImGui::TextColored(OreColor(135, 144, 154), "%s", LanguageManager::GetText("MODERN_INTERFACE"));
+        std::string previewName = LanguageManager::g_currentLanguage;
+        for (const auto& language : LanguageManager::g_availableLanguages) {
+            if (language.first == LanguageManager::g_currentLanguage) {
+                previewName = language.second;
+                break;
+            }
+        }
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, OreColor(34, 40, 49));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, OreColor(43, 51, 62));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, OreColor(43, 51, 62));
+        ImGui::PushStyleColor(ImGuiCol_Border, OreColor(79, 90, 105));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 7.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12.0f, 10.0f));
+        ImGui::PushItemWidth(-1.0f);
+        if (ImGui::BeginCombo("##ModernLanguage", previewName.c_str())) {
+            for (const auto& language : LanguageManager::g_availableLanguages) {
+                bool selected = LanguageManager::g_currentLanguage == language.first;
+                if (ImGui::Selectable(language.second.c_str(), selected)) {
+                    LanguageManager::g_currentLanguage = language.first;
+                    LanguageManager::LoadLanguage(language.first);
+                    LanguageManager::SaveConfig();
+                }
+                if (selected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::PopItemWidth();
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor(4);
+    }
+
     inline void RenderImGuiBigMap() {
         if (MapRenderState::clearGPUCache.load()) {
             for(auto& p : g_regionSRVs) if(p.second) p.second->Release();
@@ -2068,52 +2222,139 @@ namespace DX11Hook {
         char infoBuf[256];
         snprintf(infoBuf, sizeof(infoBuf), LanguageManager::GetText("BIGMAP_TITLE"), MapRenderState::bigMapZoom);
         if (modernMapUI) {
-            ImVec2 titleMin(20.0f, 20.0f);
-            ImVec2 titleMax(410.0f, 78.0f);
-            draw_list->AddRectFilled(titleMin, titleMax, IM_COL32(18, 23, 28, 236), 6.0f);
-            draw_list->AddRect(titleMin, titleMax, IM_COL32(65, 149, 194, 170), 6.0f, 0, 1.0f);
-            draw_list->AddText(ImVec2(34.0f, 31.0f), IM_COL32(125, 205, 246, 255), infoBuf);
-            draw_list->AddText(ImVec2(34.0f, 53.0f), IM_COL32(174, 185, 195, 255), LanguageManager::GetText("BIGMAP_HELP"));
+            snprintf(infoBuf, sizeof(infoBuf), LanguageManager::GetText("MODERN_MAP_TITLE"), MapRenderState::bigMapZoom);
+            draw_list->AddText(ImVec2(24.0f, 23.0f), IM_COL32(236, 240, 242, 255), infoBuf);
+            draw_list->AddText(ImVec2(24.0f, 47.0f), IM_COL32(135, 144, 154, 255), LanguageManager::GetText("MODERN_MAP_HELP"));
         } else {
             draw_list->AddText(ImVec2(20, 20), IM_COL32(255, 200, 50, 255), infoBuf);
             draw_list->AddText(ImVec2(20, 45), IM_COL32(200, 200, 200, 255), LanguageManager::GetText("BIGMAP_HELP"));
         }
         
-        snprintf(infoBuf, sizeof(infoBuf), LanguageManager::GetText("CURSOR_POS"), (int)std::floor(hoverWx), (int)std::floor(hoverWz));
+        snprintf(infoBuf, sizeof(infoBuf), modernMapUI ? LanguageManager::GetText("MODERN_CURSOR_POS") : LanguageManager::GetText("CURSOR_POS"), (int)std::floor(hoverWx), (int)std::floor(hoverWz));
         ImVec2 textSize = ImGui::CalcTextSize(infoBuf);
         float cursorBarTop = modernMapUI ? io.DisplaySize.y - 50.0f : io.DisplaySize.y - 45.0f;
         float cursorBarBottom = modernMapUI ? io.DisplaySize.y - 12.0f : io.DisplaySize.y - 10.0f;
         ImU32 cursorBarColor = modernMapUI ? IM_COL32(18, 23, 28, 236) : IM_COL32(0, 0, 0, 180);
-        draw_list->AddRectFilled(ImVec2(io.DisplaySize.x / 2 - textSize.x / 2 - 15, cursorBarTop),
-                                 ImVec2(io.DisplaySize.x / 2 + textSize.x / 2 + 15, cursorBarBottom),
+        float cursorPanelWidth = modernMapUI ? 260.0f : textSize.x + 30.0f;
+        draw_list->AddRectFilled(ImVec2(io.DisplaySize.x * 0.5f - cursorPanelWidth * 0.5f, cursorBarTop),
+                                 ImVec2(io.DisplaySize.x * 0.5f + cursorPanelWidth * 0.5f, cursorBarBottom),
                                  cursorBarColor, modernMapUI ? 6.0f : 5.0f);
         if (modernMapUI) {
-            draw_list->AddRect(ImVec2(io.DisplaySize.x / 2 - textSize.x / 2 - 15, cursorBarTop),
-                               ImVec2(io.DisplaySize.x / 2 + textSize.x / 2 + 15, cursorBarBottom),
+            draw_list->AddRect(ImVec2(io.DisplaySize.x * 0.5f - cursorPanelWidth * 0.5f, cursorBarTop),
+                               ImVec2(io.DisplaySize.x * 0.5f + cursorPanelWidth * 0.5f, cursorBarBottom),
                                IM_COL32(73, 86, 98, 190), 6.0f, 0, 1.0f);
         }
         draw_list->AddText(ImVec2(io.DisplaySize.x / 2 - textSize.x / 2, modernMapUI ? io.DisplaySize.y - 39.0f : io.DisplaySize.y - 35.0f),
                            IM_COL32(255, 255, 255, 255), infoBuf);
 
         char biomeBuf[512];
-        snprintf(biomeBuf, sizeof(biomeBuf), LanguageManager::GetText("BIOME_LABEL"), MapRenderState::currentBiomeName.c_str());
+        if (modernMapUI) snprintf(biomeBuf, sizeof(biomeBuf), "%s", MapRenderState::currentBiomeName.c_str());
+        else snprintf(biomeBuf, sizeof(biomeBuf), LanguageManager::GetText("BIOME_LABEL"), MapRenderState::currentBiomeName.c_str());
         ImVec2 biomeTextSize = ImGui::CalcTextSize(biomeBuf);
         float biomeTop = modernMapUI ? 20.0f : 15.0f;
         float biomeBottom = modernMapUI ? 58.0f : 50.0f;
         ImU32 biomeBackground = modernMapUI ? IM_COL32(18, 23, 28, 236) : IM_COL32(0, 0, 0, 180);
-        draw_list->AddRectFilled(ImVec2(io.DisplaySize.x / 2 - biomeTextSize.x / 2 - 20, biomeTop),
-                                 ImVec2(io.DisplaySize.x / 2 + biomeTextSize.x / 2 + 20, biomeBottom),
+        float biomePanelWidth = modernMapUI ? 244.0f : biomeTextSize.x + 40.0f;
+        draw_list->AddRectFilled(ImVec2(io.DisplaySize.x * 0.5f - biomePanelWidth * 0.5f, biomeTop),
+                                 ImVec2(io.DisplaySize.x * 0.5f + biomePanelWidth * 0.5f, biomeBottom),
                                  biomeBackground, modernMapUI ? 6.0f : 5.0f);
         if (modernMapUI) {
-            draw_list->AddRect(ImVec2(io.DisplaySize.x / 2 - biomeTextSize.x / 2 - 20, biomeTop),
-                               ImVec2(io.DisplaySize.x / 2 + biomeTextSize.x / 2 + 20, biomeBottom),
+            draw_list->AddRect(ImVec2(io.DisplaySize.x * 0.5f - biomePanelWidth * 0.5f, biomeTop),
+                               ImVec2(io.DisplaySize.x * 0.5f + biomePanelWidth * 0.5f, biomeBottom),
                                IM_COL32(73, 86, 98, 190), 6.0f, 0, 1.0f);
         }
-        draw_list->AddText(ImVec2(io.DisplaySize.x / 2 - biomeTextSize.x / 2, modernMapUI ? 31.0f : 25.0f),
+        if (modernMapUI) {
+            draw_list->AddText(ImVec2(io.DisplaySize.x * 0.5f - biomeTextSize.x * 0.5f - 12.0f, 31.0f), IM_COL32(33, 204, 76, 255), "\xe2\x97\x88");
+        }
+        draw_list->AddText(ImVec2(io.DisplaySize.x * 0.5f - biomeTextSize.x * 0.5f + (modernMapUI ? 10.0f : 0.0f), modernMapUI ? 31.0f : 25.0f),
                            modernMapUI ? IM_COL32(155, 225, 181, 255) : IM_COL32(180, 255, 180, 255), biomeBuf);
 
-        float sidebarWidth = modernMapUI ? 312.0f : 270.0f;
-        float sidebarHeight = modernMapUI ? 204.0f : 190.0f;
+        if (modernMapUI) {
+            ImGui::SetCursorPos(ImVec2(io.DisplaySize.x - 320.0f, 20.0f));
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, OreColor(25, 29, 34));
+            ImGui::PushStyleColor(ImGuiCol_Border, OreColor(79, 90, 105));
+            ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18.0f, 18.0f));
+            ImGui::BeginChild("ModernMapSidebar", ImVec2(300.0f, 300.0f), true, ImGuiWindowFlags_NoScrollbar);
+
+            ImDrawList* sidebarDrawList = ImGui::GetWindowDrawList();
+            ImVec2 headerPos = ImGui::GetCursorScreenPos();
+            sidebarDrawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() + 4.0f, headerPos, IM_COL32(236, 240, 242, 255), LanguageManager::GetText("MODERN_PLAYER_POSITION"));
+            ImGui::Dummy(ImVec2(0.0f, 42.0f));
+
+            float contentWidth = ImGui::GetContentRegionAvail().x;
+            ImVec2 metricsPos = ImGui::GetCursorScreenPos();
+            sidebarDrawList->AddRectFilled(metricsPos, ImVec2(metricsPos.x + contentWidth, metricsPos.y + 76.0f), IM_COL32(34, 40, 49, 255), 7.0f);
+            const char* dimensionName = LanguageManager::GetText("DIM_UNKNOWN");
+            if (MapRenderState::currentDimensionId == 0) dimensionName = LanguageManager::GetText("DIM_OVERWORLD");
+            else if (MapRenderState::currentDimensionId == 1) dimensionName = LanguageManager::GetText("DIM_NETHER");
+            else if (MapRenderState::currentDimensionId == 2) dimensionName = LanguageManager::GetText("DIM_END");
+            const char* projectionName = MapRenderState::caveMode ? LanguageManager::GetText("MODERN_CAVE_PROJECTION") : LanguageManager::GetText("MODERN_SURFACE");
+            char dimensionBuf[128];
+            snprintf(dimensionBuf, sizeof(dimensionBuf), "%s  \xc2\xb7  %s", dimensionName, projectionName);
+            char playerPositionBuf[128];
+            snprintf(playerPositionBuf, sizeof(playerPositionBuf), "X %d    Y %d    Z %d", g_playerBlockX, (int)g_playerY, g_playerBlockZ);
+            sidebarDrawList->AddText(ImVec2(metricsPos.x + 12.0f, metricsPos.y + 10.0f), IM_COL32(135, 144, 154, 255), dimensionBuf);
+            sidebarDrawList->AddText(ImVec2(metricsPos.x + 12.0f, metricsPos.y + 36.0f), IM_COL32(236, 240, 242, 255), playerPositionBuf);
+            ImGui::Dummy(ImVec2(contentWidth, 76.0f));
+            ImGui::Dummy(ImVec2(0.0f, 16.0f));
+
+            ImVec2 centerButtonPos = ImGui::GetCursorScreenPos();
+            constexpr float centerButtonWidth = 212.0f;
+            constexpr float actionButtonHeight = 42.0f;
+            ImGui::InvisibleButton("##ModernCenterMap", ImVec2(centerButtonWidth, actionButtonHeight));
+            bool centerHovered = ImGui::IsItemHovered();
+            sidebarDrawList->AddRectFilled(centerButtonPos, ImVec2(centerButtonPos.x + centerButtonWidth, centerButtonPos.y + actionButtonHeight), centerHovered ? IM_COL32(82, 149, 250, 255) : IM_COL32(59, 130, 246, 255), 7.0f);
+            const char* centerLabel = LanguageManager::GetText("MODERN_CENTER_PLAYER");
+            ImVec2 centerLabelSize = ImGui::CalcTextSize(centerLabel);
+            sidebarDrawList->AddText(ImVec2(centerButtonPos.x + (centerButtonWidth - centerLabelSize.x) * 0.5f - 10.0f, centerButtonPos.y + 12.0f), IM_COL32(236, 240, 242, 255), centerLabel);
+            sidebarDrawList->AddText(ImVec2(centerButtonPos.x + centerButtonWidth * 0.5f + centerLabelSize.x * 0.5f + 8.0f, centerButtonPos.y + 12.0f), IM_COL32(236, 240, 242, 255), "\xe2\x8c\x96");
+            if (ImGui::IsItemClicked()) {
+                MapRenderState::bigMapOffsetX = 0.0f;
+                MapRenderState::bigMapOffsetZ = 0.0f;
+            }
+            ImGui::SameLine(0.0f, 10.0f);
+
+            ImVec2 settingsButtonPos = ImGui::GetCursorScreenPos();
+            ImGui::InvisibleButton("##ModernMapSettings", ImVec2(42.0f, actionButtonHeight));
+            bool settingsHovered = ImGui::IsItemHovered();
+            sidebarDrawList->AddRectFilled(settingsButtonPos, ImVec2(settingsButtonPos.x + 42.0f, settingsButtonPos.y + actionButtonHeight), settingsHovered ? IM_COL32(43, 51, 62, 255) : IM_COL32(34, 40, 49, 255), 7.0f);
+            sidebarDrawList->AddRect(settingsButtonPos, ImVec2(settingsButtonPos.x + 42.0f, settingsButtonPos.y + actionButtonHeight), IM_COL32(79, 90, 105, 255), 7.0f);
+            ImVec2 gearSize = ImGui::CalcTextSize("\xe2\x9a\x99");
+            sidebarDrawList->AddText(ImVec2(settingsButtonPos.x + (42.0f - gearSize.x) * 0.5f, settingsButtonPos.y + 12.0f), IM_COL32(236, 240, 242, 255), "\xe2\x9a\x99");
+            if (ImGui::IsItemClicked()) ImGui::OpenPopup("SettingsPopup");
+
+            ImGui::Dummy(ImVec2(0.0f, 16.0f));
+            ImVec2 mapModePos = ImGui::GetCursorScreenPos();
+            sidebarDrawList->AddRectFilled(mapModePos, ImVec2(mapModePos.x + contentWidth, mapModePos.y + 30.0f), IM_COL32(34, 40, 49, 255), 7.0f);
+            ImU32 modeColor = MapRenderState::caveMode ? IM_COL32(234, 197, 79, 255) : IM_COL32(33, 204, 76, 255);
+            sidebarDrawList->AddCircleFilled(ImVec2(mapModePos.x + 14.0f, mapModePos.y + 15.0f), 4.0f, modeColor);
+            char modeBuf[160];
+            snprintf(modeBuf, sizeof(modeBuf), "%s  \xc2\xb7  %s", projectionName, LanguageManager::GetText("MODERN_MAP_UPDATING"));
+            sidebarDrawList->AddText(ImVec2(mapModePos.x + 26.0f, mapModePos.y + 7.0f), IM_COL32(236, 240, 242, 255), modeBuf);
+            ImGui::Dummy(ImVec2(contentWidth, 30.0f));
+            ImGui::EndChild();
+            ImGui::PopStyleVar(2);
+            ImGui::PopStyleColor(2);
+
+            if (ImGui::IsPopupOpen("SettingsPopup")) {
+                draw_list->AddRectFilled(ImVec2(0.0f, 0.0f), io.DisplaySize, IM_COL32(0, 0, 0, 72));
+            }
+            ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 440.0f, 0.0f), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(440.0f, io.DisplaySize.y), ImGuiCond_Always);
+            ImGui::PushStyleColor(ImGuiCol_PopupBg, OreColor(25, 29, 34));
+            ImGui::PushStyleColor(ImGuiCol_Border, OreColor(79, 90, 105));
+            ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 0.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(22.0f, 24.0f));
+            if (ImGui::BeginPopup("SettingsPopup", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar)) {
+                RenderModernMapSettingsContent();
+                ImGui::EndPopup();
+            }
+            ImGui::PopStyleVar(2);
+            ImGui::PopStyleColor(2);
+        } else {
+        float sidebarWidth = 270.0f;
+        float sidebarHeight = 190.0f;
         ImGui::SetCursorPos(ImVec2(io.DisplaySize.x - sidebarWidth - 20.0f, 20.0f));
         ImGui::PushStyleColor(ImGuiCol_ChildBg, modernMapUI ? OreColor(18, 23, 28, 236) : ImVec4(0.0f, 0.0f, 0.0f, 0.6f));
         if (modernMapUI) {
@@ -2132,7 +2373,7 @@ namespace DX11Hook {
         
         // 并排摆放 [视角回中] 主按钮与 [⚙] 齿轮设置按钮
         float availWidth = ImGui::GetContentRegionAvail().x;
-        float actionHeight = modernMapUI ? 38.0f : 35.0f;
+        float actionHeight = 35.0f;
         PushOreButtonStyle(OreButtonKind::Primary);
         if (ImGui::Button(LanguageManager::GetText("CENTER_CAMERA"), ImVec2(availWidth - 46.0f, actionHeight))) {
             MapRenderState::bigMapOffsetX = 0.0f;
@@ -2147,7 +2388,7 @@ namespace DX11Hook {
         }
         PopOreButtonStyle();
         
-        ImGui::SetNextWindowSize(ImVec2(modernMapUI ? 420.0f : 380.0f, modernMapUI ? 530.0f : 500.0f));
+        ImGui::SetNextWindowSize(ImVec2(380.0f, 500.0f));
         if (modernMapUI) {
             ImGui::PushStyleColor(ImGuiCol_PopupBg, OreColor(18, 23, 28, 250));
             ImGui::PushStyleColor(ImGuiCol_Border, OreColor(65, 149, 194, 200));
@@ -2166,9 +2407,7 @@ namespace DX11Hook {
             if (ImGui::Checkbox(LanguageManager::GetText("ROTATE_MAP"), &MapRenderState::bigMapRotateWithPlayer)) {
                 LanguageManager::SaveConfig();
             }
-            bool modernUiChanged = modernMapUI
-                ? ModernMapToggle(LanguageManager::GetText("USE_MODERN_UI"), &MapRenderState::useModernUI)
-                : ImGui::Checkbox(LanguageManager::GetText("USE_MODERN_UI"), &MapRenderState::useModernUI);
+            bool modernUiChanged = ImGui::Checkbox(LanguageManager::GetText("USE_MODERN_UI"), &MapRenderState::useModernUI);
             if (modernUiChanged) {
                 LanguageManager::SaveConfig();
             }
@@ -2262,6 +2501,7 @@ namespace DX11Hook {
             ImGui::PopStyleColor();
         }
         ImGui::PopStyleColor();
+        }
         
         static float rcWorldX = 0.0f;
         static float rcWorldZ = 0.0f;
