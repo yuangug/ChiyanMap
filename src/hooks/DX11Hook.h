@@ -219,6 +219,18 @@ namespace DX11Hook {
         return ImGui::IsItemClicked();
     }
 
+    inline bool ModernFixedButton(const char* id, const char* label, ImVec2 size, ImU32 color, ImU32 hoverColor, bool disabled = false) {
+        ImVec2 pos = ImGui::GetCursorScreenPos();
+        ImGui::InvisibleButton(id, size);
+        bool hovered = ImGui::IsItemHovered();
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        ImU32 fill = disabled ? IM_COL32(54, 60, 67, 255) : (hovered ? hoverColor : color);
+        drawList->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), fill, 7.0f);
+        ImVec2 labelSize = ImGui::CalcTextSize(label);
+        drawList->AddText(ImVec2(pos.x + (size.x - labelSize.x) * 0.5f, pos.y + (size.y - labelSize.y) * 0.5f), disabled ? IM_COL32(135, 144, 154, 255) : IM_COL32(236, 240, 242, 255), label);
+        return !disabled && ImGui::IsItemClicked();
+    }
+
     inline bool ModernWaypointColorPalette(float* color) {
         static const ImVec4 palette[] = {
             OreColor(225, 29, 72), OreColor(244, 114, 182), OreColor(251, 146, 60), OreColor(250, 204, 21), OreColor(132, 204, 22),
@@ -2037,6 +2049,8 @@ namespace DX11Hook {
         }
         if (ModernSettingCard("##ModernMapUi", LanguageManager::GetText("USE_MODERN_UI"), LanguageManager::GetText("MODERN_UI_DETAIL"), &MapRenderState::useModernUI)) {
             LanguageManager::SaveConfig();
+            ImGui::CloseCurrentPopup();
+            return;
         }
 
         ImGui::Spacing();
@@ -2628,9 +2642,66 @@ namespace DX11Hook {
             ImGui::OpenPopup("BigMapContextMenu");
         }
 
-        ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.12f, 0.12f, 0.12f, 0.95f));
-        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+        if (modernMapUI) ImGui::SetNextWindowSize(ImVec2(320.0f, 0.0f), ImGuiCond_Appearing);
+        ImGui::PushStyleColor(ImGuiCol_PopupBg, modernMapUI ? OreColor(25, 29, 34) : ImVec4(0.12f, 0.12f, 0.12f, 0.95f));
+        ImGui::PushStyleColor(ImGuiCol_Border, modernMapUI ? OreColor(79, 90, 105) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+        if (modernMapUI) {
+            ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 8.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0f, 14.0f));
+        }
         if (ImGui::BeginPopup("BigMapContextMenu")) {
+            if (modernMapUI) {
+                int bx = (int)std::floor(rcWorldX);
+                int bz = (int)std::floor(rcWorldZ);
+                int by = 320;
+                if (g_clientInstance) {
+                    BlockSource* region = g_clientInstance->getRegion();
+                    if (region) {
+                        short topY = region->getAboveTopSolidBlock(bx, bz, true, true);
+                        if (topY > -60 && topY < 319) by = (int)topY + 1;
+                    }
+                }
+                ImGui::TextColored(OreColor(236, 240, 242), "%s", LanguageManager::GetText("CONTEXT_TITLE"));
+                ImGui::Spacing();
+                ImVec2 coordinateCardPos = ImGui::GetCursorScreenPos();
+                float coordinateCardWidth = ImGui::GetContentRegionAvail().x;
+                ImDrawList* contextDrawList = ImGui::GetWindowDrawList();
+                contextDrawList->AddRectFilled(coordinateCardPos, ImVec2(coordinateCardPos.x + coordinateCardWidth, coordinateCardPos.y + 48.0f), IM_COL32(34, 40, 49, 255), 7.0f);
+                char coordinateBuf[96];
+                snprintf(coordinateBuf, sizeof(coordinateBuf), "X %d   Y %d   Z %d", bx, by, bz);
+                contextDrawList->AddText(ImVec2(coordinateCardPos.x + 12.0f, coordinateCardPos.y + 15.0f), IM_COL32(236, 240, 242, 255), coordinateBuf);
+                ImGui::Dummy(ImVec2(coordinateCardWidth, 48.0f));
+                ImGui::Spacing();
+                if (ModernFullWidthButton("##ModernCopyCoordinates", LanguageManager::GetText("COPY_COORDS"), IM_COL32(34, 40, 49, 255), IM_COL32(46, 55, 66, 255))) {
+                    char clipboardBuf[128];
+                    snprintf(clipboardBuf, sizeof(clipboardBuf), "%d %d %d", bx, by, bz);
+                    ImGui::SetClipboardText(clipboardBuf);
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::Spacing();
+                if (ModernFullWidthButton("##ModernCreateWaypoint", LanguageManager::GetText("CREATE_WAYPOINT"), IM_COL32(59, 130, 246, 255), IM_COL32(82, 149, 250, 255))) {
+                    MapRenderState::addWaypointX = bx;
+                    MapRenderState::addWaypointY = by;
+                    MapRenderState::addWaypointZ = bz;
+                    MapRenderState::triggerAddWaypoint = true;
+                    MapRenderState::showWaypointUI = true;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::Spacing();
+                if (ModernFullWidthButton("##ModernTeleportHere", LanguageManager::GetText("TELEPORT_HERE"), IM_COL32(184, 140, 43, 255), IM_COL32(218, 169, 62, 255))) {
+                    MapRenderState::tpTargetX = (float)bx + 0.5f;
+                    MapRenderState::tpTargetY = (float)by;
+                    MapRenderState::tpTargetZ = (float)bz + 0.5f;
+                    MapRenderState::triggerTeleport.store(true);
+                    MapRenderState::showBigMap = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::Spacing();
+                if (ModernFullWidthButton("##ModernOpenWaypointManager", LanguageManager::GetText("OPEN_WP_MENU"), IM_COL32(34, 40, 49, 255), IM_COL32(46, 55, 66, 255))) {
+                    MapRenderState::showWaypointUI = true;
+                    ImGui::CloseCurrentPopup();
+                }
+            } else {
             int bx = (int)std::floor(rcWorldX);
             int bz = (int)std::floor(rcWorldZ);
             
@@ -2688,9 +2759,11 @@ namespace DX11Hook {
             if (ImGui::Selectable(LanguageManager::GetText("OPEN_WP_MENU"))) {
                 MapRenderState::showWaypointUI = true;
             }
+            }
 
             ImGui::EndPopup();
         }
+        if (modernMapUI) ImGui::PopStyleVar(2);
         ImGui::PopStyleColor(2);
 
         if (triggerWpMenu) {
@@ -2701,8 +2774,13 @@ namespace DX11Hook {
         static std::string bigMapRenameId = "";
         static bool bigMapTriggerRename = false;
 
-        ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.12f, 0.12f, 0.12f, 0.95f));
-        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+        if (modernMapUI) ImGui::SetNextWindowSize(ImVec2(300.0f, 0.0f), ImGuiCond_Appearing);
+        ImGui::PushStyleColor(ImGuiCol_PopupBg, modernMapUI ? OreColor(25, 29, 34) : ImVec4(0.12f, 0.12f, 0.12f, 0.95f));
+        ImGui::PushStyleColor(ImGuiCol_Border, modernMapUI ? OreColor(79, 90, 105) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+        if (modernMapUI) {
+            ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 8.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0f, 14.0f));
+        }
         if (ImGui::BeginPopup("WaypointContextMenu")) {
             Waypoint targetWp;
             bool found = false;
@@ -2717,7 +2795,37 @@ namespace DX11Hook {
                 }
             }
 
-            if (found) {
+            if (found && modernMapUI) {
+                ImGui::TextColored(ImVec4(targetWp.r, targetWp.g, targetWp.b, 1.0f), "%s", targetWp.name.c_str());
+                ImVec2 coordinateCardPos = ImGui::GetCursorScreenPos();
+                float coordinateCardWidth = ImGui::GetContentRegionAvail().x;
+                ImDrawList* waypointContextDrawList = ImGui::GetWindowDrawList();
+                waypointContextDrawList->AddRectFilled(coordinateCardPos, ImVec2(coordinateCardPos.x + coordinateCardWidth, coordinateCardPos.y + 48.0f), IM_COL32(34, 40, 49, 255), 7.0f);
+                char modernCoordBuf[96];
+                snprintf(modernCoordBuf, sizeof(modernCoordBuf), "X %d   Y %d   Z %d", targetWp.x, targetWp.y, targetWp.z);
+                waypointContextDrawList->AddText(ImVec2(coordinateCardPos.x + 12.0f, coordinateCardPos.y + 15.0f), IM_COL32(236, 240, 242, 255), modernCoordBuf);
+                ImGui::Dummy(ImVec2(coordinateCardWidth, 48.0f));
+                ImGui::Spacing();
+                if (ModernFullWidthButton("##ModernWaypointContextTeleport", LanguageManager::GetText("TELEPORT_WP"), IM_COL32(59, 130, 246, 255), IM_COL32(82, 149, 250, 255))) {
+                    MapRenderState::tpTargetX = (float)targetWp.x + 0.5f;
+                    MapRenderState::tpTargetY = (float)targetWp.y;
+                    MapRenderState::tpTargetZ = (float)targetWp.z + 0.5f;
+                    MapRenderState::triggerTeleport.store(true);
+                    MapRenderState::showBigMap = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::Spacing();
+                if (ModernFullWidthButton("##ModernWaypointContextRename", LanguageManager::GetText("RENAME_WP"), IM_COL32(184, 140, 43, 255), IM_COL32(218, 169, 62, 255))) {
+                    bigMapRenameId = selectedWpId;
+                    bigMapTriggerRename = true;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::Spacing();
+                if (ModernFullWidthButton("##ModernWaypointContextDelete", LanguageManager::GetText("DELETE_WP"), IM_COL32(182, 46, 46, 255), IM_COL32(226, 34, 34, 255))) {
+                    WaypointManager::RemoveWaypoint(selectedWpId);
+                    ImGui::CloseCurrentPopup();
+                }
+            } else if (found) {
                 ImVec2 titleSize = ImGui::CalcTextSize(targetWp.name.c_str());
                 ImGui::SetCursorPosX((ImGui::GetWindowWidth() - titleSize.x) * 0.5f);
                 ImGui::TextColored(ImVec4(targetWp.r, targetWp.g, targetWp.b, 1.0f), "%s", targetWp.name.c_str());
@@ -2753,6 +2861,7 @@ namespace DX11Hook {
             }
             ImGui::EndPopup();
         }
+        if (modernMapUI) ImGui::PopStyleVar(2);
         ImGui::PopStyleColor(2);
 
         // 调用大地图右键地标重命名弹窗模块
@@ -2783,7 +2892,102 @@ namespace DX11Hook {
         return buf;
     }
 
+    inline void RenderModernDeathPointUI() {
+        ImGuiIO& io = ImGui::GetIO();
+        ImGui::SetNextWindowSize(ImVec2(860.0f, 560.0f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, OreColor(25, 29, 34, 250));
+        ImGui::PushStyleColor(ImGuiCol_Border, OreColor(79, 90, 105));
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, OreColor(18, 22, 27, 210));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18.0f, 18.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 7.0f);
+
+        if (ImGui::Begin("##ModernDeathPointManager", &MapRenderState::showDeathPointUI, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoTitleBar)) {
+            ImGui::TextColored(OreColor(236, 240, 242), "%s", LanguageManager::GetText("MODERN_DEATH_MANAGER"));
+            ImGui::Spacing();
+            ImGui::BeginChild("##ModernDeathPointList", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_NoScrollbar);
+            std::vector<DeathPoint> points;
+            {
+                std::lock_guard<std::mutex> lock(DeathPointManager::g_deathMutex);
+                points = DeathPointManager::g_deathPoints;
+            }
+
+            std::string removeId;
+            bool triggerTeleport = false;
+            if (points.empty()) {
+                ImGui::Dummy(ImVec2(1.0f, 110.0f));
+                float width = ImGui::CalcTextSize(LanguageManager::GetText("DEATH_POINTS_EMPTY")).x;
+                ImGui::SetCursorPosX((ImGui::GetWindowWidth() - width) * 0.5f);
+                ImGui::TextDisabled("%s", LanguageManager::GetText("DEATH_POINTS_EMPTY"));
+            }
+
+            for (const auto& point : points) {
+                ImGui::PushID(point.id.c_str());
+                bool sameDimension = point.dimensionId == MapRenderState::currentDimensionId;
+                bool compassConnected = MapRenderState::externalCompassStatus.load() == MapRenderState::ExternalCompassConnected;
+                bool pointing = ExternalCompassSync::IsTargetPointing(point.id);
+                ImVec2 rowPos = ImGui::GetCursorScreenPos();
+                float rowWidth = ImGui::GetContentRegionAvail().x;
+                ImDrawList* drawList = ImGui::GetWindowDrawList();
+                drawList->AddRectFilled(rowPos, ImVec2(rowPos.x + rowWidth, rowPos.y + 108.0f), pointing ? IM_COL32(60, 52, 31, 255) : IM_COL32(34, 40, 49, 255), 7.0f);
+                ImU32 dimensionColor = sameDimension ? IM_COL32(33, 204, 76, 255) : IM_COL32(135, 144, 154, 255);
+                drawList->AddCircleFilled(ImVec2(rowPos.x + 16.0f, rowPos.y + 20.0f), 4.0f, dimensionColor);
+                drawList->AddText(ImVec2(rowPos.x + 28.0f, rowPos.y + 11.0f), IM_COL32(236, 240, 242, 255), DimensionText(point.dimensionId));
+                char locationBuf[96];
+                snprintf(locationBuf, sizeof(locationBuf), "X %d   Y %d   Z %d", point.x, point.y, point.z);
+                drawList->AddText(ImVec2(rowPos.x + 16.0f, rowPos.y + 39.0f), IM_COL32(236, 240, 242, 255), locationBuf);
+                drawList->AddText(ImVec2(rowPos.x + 16.0f, rowPos.y + 66.0f), IM_COL32(135, 144, 154, 255), FormatDeathTime(point.timestamp).c_str());
+                if (!sameDimension) {
+                    drawList->AddText(ImVec2(rowPos.x + 16.0f, rowPos.y + 87.0f), IM_COL32(234, 197, 79, 255), LanguageManager::GetText("MODERN_DIMENSION_MISMATCH"));
+                } else if (!compassConnected) {
+                    drawList->AddText(ImVec2(rowPos.x + 16.0f, rowPos.y + 87.0f), IM_COL32(234, 197, 79, 255), LanguageManager::GetText("MODERN_COMPASS_UNAVAILABLE"));
+                }
+
+                float buttonX = rowPos.x + rowWidth - 388.0f;
+                ImGui::SetCursorScreenPos(ImVec2(buttonX, rowPos.y + 33.0f));
+                if (ModernFixedButton("##DeathTeleport", LanguageManager::GetText("DEATH_POINT_TELEPORT"), ImVec2(120.0f, 42.0f), IM_COL32(59, 130, 246, 255), IM_COL32(82, 149, 250, 255), !sameDimension)) {
+                    MapRenderState::tpTargetX = (float)point.x + 0.5f;
+                    MapRenderState::tpTargetY = (float)point.y;
+                    MapRenderState::tpTargetZ = (float)point.z + 0.5f;
+                    MapRenderState::triggerTeleport.store(true);
+                    triggerTeleport = true;
+                }
+                ImGui::SetCursorScreenPos(ImVec2(buttonX + 130.0f, rowPos.y + 33.0f));
+                const char* compassLabel = pointing ? LanguageManager::GetText("DEATH_POINT_CANCEL_COMPASS") : LanguageManager::GetText("DEATH_POINT_POINT_COMPASS");
+                if (ModernFixedButton("##DeathCompass", compassLabel, ImVec2(170.0f, 42.0f), IM_COL32(184, 140, 43, 255), IM_COL32(218, 169, 62, 255), !sameDimension || !compassConnected)) {
+                    if (pointing) ExternalCompassSync::ClearTargetPoint();
+                    else ExternalCompassSync::SetTargetPoint(point.id, (float)point.x, (float)point.z, point.dimensionId);
+                }
+                ImGui::SetCursorScreenPos(ImVec2(buttonX + 310.0f, rowPos.y + 33.0f));
+                if (ModernFixedButton("##DeathDelete", LanguageManager::GetText("DEATH_POINT_DELETE"), ImVec2(78.0f, 42.0f), IM_COL32(182, 46, 46, 255), IM_COL32(226, 34, 34, 255))) {
+                    removeId = point.id;
+                }
+
+                ImGui::SetCursorScreenPos(ImVec2(rowPos.x, rowPos.y + 118.0f));
+                ImGui::PopID();
+            }
+            if (!removeId.empty()) {
+                if (ExternalCompassSync::IsTargetPointing(removeId)) ExternalCompassSync::ClearTargetPoint();
+                DeathPointManager::RemoveDeathPoint(removeId);
+            }
+            ImGui::EndChild();
+
+            if (triggerTeleport) {
+                MapRenderState::showDeathPointUI = false;
+                MapRenderState::showBigMap = false;
+            }
+        }
+        ImGui::End();
+        ImGui::PopStyleVar(3);
+        ImGui::PopStyleColor(3);
+    }
+
     inline void RenderImGuiDeathPointUI() {
+        if (MapRenderState::useModernUI) {
+            RenderModernDeathPointUI();
+            return;
+        }
         ImGui::SetNextWindowSize(ImVec2(720, 520), ImGuiCond_FirstUseEver);
         if (!ImGui::Begin(LanguageManager::GetText("DEATH_POINTS_TITLE"), &MapRenderState::showDeathPointUI, ImGuiWindowFlags_NoCollapse)) {
             ImGui::End();
