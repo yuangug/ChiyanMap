@@ -2098,6 +2098,9 @@ namespace DX11Hook {
             if (ImGui::Checkbox(LanguageManager::GetText("ROTATE_MAP"), &MapRenderState::bigMapRotateWithPlayer)) {
                 LanguageManager::SaveConfig();
             }
+            if (ImGui::Checkbox(LanguageManager::GetText("USE_MODERN_UI"), &MapRenderState::useModernUI)) {
+                LanguageManager::SaveConfig();
+            }
             ImGui::Spacing();
             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
             if (ImGui::SliderFloat(LanguageManager::GetText("MINIMAP_SIZE"), &MapRenderState::minimapSize, 60.0f, 300.0f, "%.0f")) {
