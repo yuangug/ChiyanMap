@@ -57,6 +57,7 @@ namespace MapRenderState {
     inline float tempMinimapOffsetX = 0.0f; // 临时X偏移（撤销用）
     inline float tempMinimapOffsetY = 0.0f; // 临时Y偏移（撤销用）
     inline bool bigMapRotateWithPlayer = false; // 小地图跟随玩家旋转（false=上北下南, true=地图旋转指针固定）
+    inline bool useModernUI = false; // 使用新版地图界面
     inline bool externalCompassEnabled = false;
     inline std::string externalCompassDeviceName = "MCOMPASS";
     inline int externalCompassIntervalMs = 30;

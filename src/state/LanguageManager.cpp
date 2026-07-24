@@ -899,6 +899,7 @@ namespace LanguageManager {
                 MapRenderState::minimapOffsetX = j.value("minimapOffsetX", 0.0f);
                 MapRenderState::minimapOffsetY = j.value("minimapOffsetY", 0.0f);
                 MapRenderState::bigMapRotateWithPlayer = j.value("bigMapRotateWithPlayer", false);
+                MapRenderState::useModernUI = j.value("useModernUI", false);
                 MapRenderState::externalCompassEnabled = j.value("externalCompassEnabled", false);
                 MapRenderState::externalCompassDeviceName = j.value("externalCompassDeviceName", std::string("MCOMPASS"));
                 MapRenderState::externalCompassIntervalMs = j.value("externalCompassIntervalMs", 30);
@@ -923,6 +924,7 @@ namespace LanguageManager {
         j["minimapOffsetX"] = MapRenderState::minimapOffsetX;
         j["minimapOffsetY"] = MapRenderState::minimapOffsetY;
         j["bigMapRotateWithPlayer"] = MapRenderState::bigMapRotateWithPlayer;
+        j["useModernUI"] = MapRenderState::useModernUI;
         j["externalCompassEnabled"] = MapRenderState::externalCompassEnabled;
         j["externalCompassDeviceName"] = MapRenderState::externalCompassDeviceName;
         j["externalCompassIntervalMs"] = MapRenderState::externalCompassIntervalMs;
@@ -944,6 +946,7 @@ namespace LanguageManager {
             {"MCOMPASS_INTERVAL", "BLE interval ms"},
             {"MCOMPASS_MIN_DELTA", "BLE min delta"},
             {"MCOMPASS_APPLY", "Apply mcompass settings"},
+            {"USE_MODERN_UI", "Use modern map interface"},
             {"DEATH_POINTS_TITLE", "Death Records (Press 'I' or 'Esc' to Close)##Deaths"},
             {"DEATH_POINTS_EMPTY", "No death records yet."},
             {"DEATH_POINTS_HINT", "Recent death records are kept per world. Teleport and compass actions require the same dimension."},
@@ -964,6 +967,7 @@ namespace LanguageManager {
             {"MCOMPASS_INTERVAL", "BLE 间隔 ms"},
             {"MCOMPASS_MIN_DELTA", "BLE 最小角度差"},
             {"MCOMPASS_APPLY", "应用 mcompass 设置"},
+            {"USE_MODERN_UI", "使用新版地图界面"},
             {"DEATH_POINTS_TITLE", "死亡记录 (按 'I' 或 'Esc' 关闭)##Deaths"},
             {"DEATH_POINTS_EMPTY", "暂无死亡记录。"},
             {"DEATH_POINTS_HINT", "死亡记录按世界保存，只能传送或指向当前维度的记录。"},
@@ -984,6 +988,7 @@ namespace LanguageManager {
             {"MCOMPASS_INTERVAL", "BLE 間隔 ms"},
             {"MCOMPASS_MIN_DELTA", "BLE 最小角度差"},
             {"MCOMPASS_APPLY", "套用 mcompass 設定"},
+            {"USE_MODERN_UI", "使用新版地圖介面"},
             {"DEATH_POINTS_TITLE", "死亡紀錄 (按 'I' 或 'Esc' 關閉)##Deaths"},
             {"DEATH_POINTS_EMPTY", "暫無死亡紀錄。"},
             {"DEATH_POINTS_HINT", "死亡紀錄按世界保存，只能傳送或指向目前維度的紀錄。"},
