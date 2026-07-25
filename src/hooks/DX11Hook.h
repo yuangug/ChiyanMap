@@ -746,11 +746,16 @@ namespace DX11Hook {
         g_playerHeadTextures.clear();
     }
 
-    inline void RefreshRadarEntitySnapshot(std::vector<RadarEntity>& cachedEntities, uint64_t& cachedGeneration) {
+    inline void RefreshRadarEntitySnapshot(
+        std::vector<RadarEntity>& cachedEntities,
+        std::string& cachedLocalPlayerUuid,
+        uint64_t& cachedGeneration
+    ) {
         const uint64_t publishedGeneration = g_radarGeneration.load(std::memory_order_acquire);
         if (publishedGeneration == cachedGeneration) return;
         std::lock_guard<std::mutex> lock(g_radarMutex);
         cachedEntities = g_radarEntities;
+        cachedLocalPlayerUuid = g_localPlayerUuid;
         cachedGeneration = g_radarGeneration.load(std::memory_order_relaxed);
     }
 
@@ -1736,11 +1741,13 @@ namespace DX11Hook {
 
         ClearPlayerHeadTexturesIfRequested();
         static std::vector<RadarEntity> s_cachedEntities;
+        static std::string s_cachedLocalPlayerUuid;
         static uint64_t s_cachedRadarGeneration = 0;
-        RefreshRadarEntitySnapshot(s_cachedEntities, s_cachedRadarGeneration);
+        RefreshRadarEntitySnapshot(s_cachedEntities, s_cachedLocalPlayerUuid, s_cachedRadarGeneration);
 
         float scale = IM_MAP_R / ZOOM_RADIUS; 
         for (const auto& ent : s_cachedEntities) {
+            if (ent.type == 0 && !s_cachedLocalPlayerUuid.empty() && ent.uuid == s_cachedLocalPlayerUuid) continue;
             float edx = ent.x - g_playerX;
             float edz = ent.z - g_playerZ;
             if (edx * edx + edz * edz < 4.0f) continue;
@@ -2318,9 +2325,11 @@ namespace DX11Hook {
         if (g_tabHeld) {
             ClearPlayerHeadTexturesIfRequested();
             static std::vector<RadarEntity> s_cachedEntities;
+            static std::string s_cachedLocalPlayerUuid;
             static uint64_t s_cachedRadarGeneration = 0;
-            RefreshRadarEntitySnapshot(s_cachedEntities, s_cachedRadarGeneration);
+            RefreshRadarEntitySnapshot(s_cachedEntities, s_cachedLocalPlayerUuid, s_cachedRadarGeneration);
             for (const auto& ent : s_cachedEntities) {
+                if (ent.type == 0 && !s_cachedLocalPlayerUuid.empty() && ent.uuid == s_cachedLocalPlayerUuid) continue;
                 float dxSelf = ent.x - g_playerX;
                 float dzSelf = ent.z - g_playerZ;
                 if (dxSelf * dxSelf + dzSelf * dzSelf < 4.0f) continue;
