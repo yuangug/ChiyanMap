@@ -1,6 +1,7 @@
 #pragma once
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <vector>
 #include <string>
 #include <mutex>
@@ -22,6 +23,7 @@ namespace MapRenderState {
     inline std::string currentWorldId = "";
     inline int currentDimensionId = -999;
     inline std::atomic<bool> clearGPUCache{false}; // 用于通知 GPU 清理旧世界的贴图残留
+    inline std::atomic<bool> clearPlayerHeadTextures{false};
 
     // [新增] 路径点 UI 开启状态
     inline bool showWaypointUI = false;
@@ -88,11 +90,14 @@ struct RadarEntity {
 // 玩家皮肤头部像素缓存（游戏线程写入）
 struct PlayerSkinHead {
     uint8_t pixels[8*8*4]{}; // 8x8 RGBA 头部正面
+    uint64_t fingerprint = 0;
+    uint64_t revision = 0;
     bool valid = false;
 };
 
-extern std::atomic<bool> g_radarUpdated;
 extern std::vector<RadarEntity> g_radarEntities;
+extern std::mutex g_radarMutex;
+extern std::atomic<uint64_t> g_radarGeneration;
 extern std::unordered_map<std::string, PlayerSkinHead> g_playerSkinHeads; // keyed by UUID
 extern std::mutex g_playerSkinMutex;
 inline std::atomic<bool> g_mapDataUpdated{true};

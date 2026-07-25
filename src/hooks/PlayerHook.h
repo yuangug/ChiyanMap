@@ -93,44 +93,108 @@ inline void UnregisterBRDClientInstanceUpdateCallback() {
     g_registeredBRDClientInstanceCallback = false;
 }
 
-// 提取玩家皮肤 8x8 头部正面像素
-inline void ExtractPlayerSkinHead(class Player* player, const std::string& uuid) {
-    if (uuid.empty()) return;
-    {
-        std::lock_guard<std::mutex> lock(g_playerSkinMutex);
-        auto it = g_playerSkinHeads.find(uuid);
-        if (it != g_playerSkinHeads.end() && it->second.valid) return;
+inline uint64_t HashPlayerSkinHead(const uint8_t* pixels, size_t size) {
+    uint64_t hash = 1469598103934665603ull;
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= pixels[i];
+        hash *= 1099511628211ull;
     }
+    return hash;
+}
+
+inline void InvalidatePlayerSkinHead(const std::string& uuid) {
+    if (uuid.empty()) return;
+    std::lock_guard<std::mutex> lock(g_playerSkinMutex);
+    auto it = g_playerSkinHeads.find(uuid);
+    if (it != g_playerSkinHeads.end() && it->second.valid) {
+        it->second.valid = false;
+        ++it->second.revision;
+    }
+}
+
+// 提取并合成玩家皮肤的 8x8 头部正面与第二层。
+inline void ExtractPlayerSkinHead(class Player* player, const std::string& uuid) {
+    if (!player || uuid.empty()) return;
     try {
-        if (!player->mSkin) return;
+        if (!player->mSkin) {
+            InvalidatePlayerSkinHead(uuid);
+            return;
+        }
         auto& skinRef = *player->mSkin;
-        if (!skinRef.mSkinImpl) return;
+        if (!skinRef.mSkinImpl) {
+            InvalidatePlayerSkinHead(uuid);
+            return;
+        }
         auto& threadOwner = *skinRef.mSkinImpl;
         auto& skinImpl = threadOwner.mObject;
-        if (skinImpl.mIsPersona) return;
+        if (skinImpl.mIsPersona) {
+            InvalidatePlayerSkinHead(uuid);
+            return;
+        }
         auto& skinImage = skinImpl.mSkinImage.get();
         auto& img = static_cast<mce::Image&>(skinImage);
-        if (img.mWidth < 8 || img.mHeight < 8) return;
-        if (img.imageFormat != mce::ImageFormat::RGBA8Unorm) return;
+        if (img.imageFormat != mce::ImageFormat::RGBA8Unorm || img.mWidth < 8 || img.mHeight < 16 || img.mWidth % 8 != 0) {
+            InvalidatePlayerSkinHead(uuid);
+            return;
+        }
         const uint8_t* pixels = img.mImageBytes.data();
-        if (!pixels) return;
-        int headX = img.mWidth / 8;
-        int headY = img.mHeight / 8;
-        int headS = img.mWidth / 8;
-        if (headS > 8) headS = 8;
+        if (!pixels) {
+            InvalidatePlayerSkinHead(uuid);
+            return;
+        }
+
+        const int unit = static_cast<int>(img.mWidth) / 8;
+        const int baseHeadX = unit;
+        const int baseHeadY = unit;
+        const int outerHeadX = unit * 5;
+        if (unit < 8 || baseHeadY + unit > static_cast<int>(img.mHeight) || outerHeadX + unit > static_cast<int>(img.mWidth)) {
+            InvalidatePlayerSkinHead(uuid);
+            return;
+        }
+
         PlayerSkinHead head;
-        for (int y = 0; y < 8 && y < headS; y++) {
-            for (int x = 0; x < 8 && x < headS; x++) {
-                int si = ((headY + y) * (int)img.mWidth + (headX + x)) * 4;
-                int di = (y * 8 + x) * 4;
-                head.pixels[di+0] = pixels[si+0];
-                head.pixels[di+1] = pixels[si+1];
-                head.pixels[di+2] = pixels[si+2];
-                head.pixels[di+3] = pixels[si+3];
+        for (int y = 0; y < 8; ++y) {
+            const int sourceY0 = baseHeadY + (y * unit) / 8;
+            const int sourceY1 = baseHeadY + ((y + 1) * unit) / 8;
+            for (int x = 0; x < 8; ++x) {
+                const int sourceX0 = baseHeadX + (x * unit) / 8;
+                const int sourceX1 = baseHeadX + ((x + 1) * unit) / 8;
+                uint32_t totals[4]{};
+                uint32_t sampleCount = 0;
+                for (int sourceY = sourceY0; sourceY < sourceY1; ++sourceY) {
+                    for (int sourceX = sourceX0; sourceX < sourceX1; ++sourceX) {
+                        const uint8_t* base = pixels + (sourceY * static_cast<int>(img.mWidth) + sourceX) * 4;
+                        const uint8_t* outer = pixels + (sourceY * static_cast<int>(img.mWidth) + outerHeadX + (sourceX - baseHeadX)) * 4;
+                        const uint32_t outerAlpha = outer[3];
+                        const uint32_t inverseOuterAlpha = 255 - outerAlpha;
+                        const uint32_t baseAlpha = base[3];
+                        const uint32_t outputAlpha = outerAlpha + (baseAlpha * inverseOuterAlpha + 127) / 255;
+                        for (int channel = 0; channel < 3; ++channel) {
+                            const uint32_t premultiplied = outer[channel] * outerAlpha
+                                + (base[channel] * baseAlpha * inverseOuterAlpha + 127) / 255;
+                            totals[channel] += outputAlpha == 0
+                                ? 0
+                                : (premultiplied + outputAlpha / 2) / outputAlpha;
+                        }
+                        totals[3] += outputAlpha;
+                        ++sampleCount;
+                    }
+                }
+                const int destination = (y * 8 + x) * 4;
+                for (int channel = 0; channel < 4; ++channel) {
+                    head.pixels[destination + channel] = static_cast<uint8_t>((totals[channel] + sampleCount / 2) / sampleCount);
+                }
             }
         }
+        head.fingerprint = HashPlayerSkinHead(head.pixels, sizeof(head.pixels));
         head.valid = true;
         std::lock_guard<std::mutex> lock(g_playerSkinMutex);
+        auto& cachedHead = g_playerSkinHeads[uuid];
+        if (cachedHead.valid && cachedHead.fingerprint == head.fingerprint
+            && std::memcmp(cachedHead.pixels, head.pixels, sizeof(head.pixels)) == 0) {
+            return;
+        }
+        head.revision = cachedHead.revision + 1;
         g_playerSkinHeads[uuid] = head;
     } catch (...) {}
 }
@@ -799,6 +863,15 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                 std::memset(g_mapWaterFlagsBack, 0, sizeof(g_mapWaterFlagsBack));
                 std::memset(g_mapBrightnessBack, 0, sizeof(g_mapBrightnessBack));
                 std::memset(g_mapChannelHeightsBack, 0, sizeof(g_mapChannelHeightsBack));
+                {
+                    std::lock_guard<std::mutex> lock(g_radarMutex);
+                    g_radarEntities.clear();
+                }
+                g_radarGeneration.fetch_add(1, std::memory_order_release);
+                {
+                    std::lock_guard<std::mutex> lock(g_playerSkinMutex);
+                    g_playerSkinHeads.clear();
+                }
                 
                 // 下界自动洞穴模式
                 if (dimId == 1) {
@@ -819,6 +892,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                 g_lastRenderZ = g_playerBlockZ;
                 
                 MapRenderState::clearGPUCache.store(true); 
+                MapRenderState::clearPlayerHeadTextures.store(true);
                 g_mapDataGeneration.fetch_add(1);
                 g_mapDataUpdated.store(true);
             }
@@ -1641,6 +1715,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                     entityType = "player";
                     auto* p = static_cast<class Player*>(actor);
                     uuid = static_cast<std::string>(p->getUuid());
+                    if (!g_localPlayerUuid.empty() && uuid == g_localPlayerUuid) continue;
                     ExtractPlayerSkinHead(p, uuid);
                 } else if (actor->hasCategory(ActorCategory::Item)) {
                     type = 3;
@@ -1655,8 +1730,11 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
 
                 tempEntities.push_back({ePos.x, ePos.y, ePos.z, type, entityType, uuid});
             }
-            g_radarEntities = tempEntities;
-            g_radarUpdated.store(true);
+            {
+                std::lock_guard<std::mutex> lock(g_radarMutex);
+                g_radarEntities = std::move(tempEntities);
+            }
+            g_radarGeneration.fetch_add(1, std::memory_order_release);
         }
 
     } else {
