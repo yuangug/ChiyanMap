@@ -26,6 +26,7 @@
 #include <mc/deps/core/math/Vec3.h>
 #include <mc/world/level/Level.h>
 #include <mc/world/actor/Actor.h>
+#include <mc/legacy/ActorRuntimeID.h>
 #include <mc/world/actor/ActorCategory.h>
 #include <mc/world/gamemode/GameMode.h>
 #include <mc/world/gamemode/InteractionResult.h>
@@ -1698,9 +1699,11 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
             std::vector<RadarEntity> tempEntities;
             auto& level = player->getLevel();
             const auto& entities = level.getRuntimeActorList();
+            const ActorRuntimeID localRuntimeId = player->getRuntimeID();
+            const mce::UUID localUuid = player->getUuid();
             
             for (auto* actor : entities) {
-                if (!actor || actor == player) continue;
+                if (!actor || actor == player || actor->getRuntimeID() == localRuntimeId) continue;
                 if (!actor->isAlive()) continue;
 
                 const Vec3& ePos = actor->getPosition();
@@ -1716,8 +1719,8 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                     type = 0;
                     entityType = "player";
                     auto* p = static_cast<class Player*>(actor);
+                    if (p == player || p->getUuid() == localUuid) continue;
                     uuid = static_cast<std::string>(p->getUuid());
-                    if (!g_localPlayerUuid.empty() && uuid == g_localPlayerUuid) continue;
                     ExtractPlayerSkinHead(p, uuid);
                 } else if (actor->hasCategory(ActorCategory::Item)) {
                     type = 3;
