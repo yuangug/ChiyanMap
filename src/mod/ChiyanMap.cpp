@@ -38,8 +38,9 @@ std::chrono::steady_clock::time_point g_lastPhysicsTime = std::chrono::steady_cl
 int g_playerBlockX = 0;
 int g_playerBlockZ = 0;
 
-std::atomic<bool> g_radarUpdated{false};
 std::vector<RadarEntity> g_radarEntities;
+std::mutex g_radarMutex;
+std::atomic<uint64_t> g_radarGeneration{0};
 std::unordered_map<std::string, PlayerSkinHead> g_playerSkinHeads;
 std::mutex g_playerSkinMutex;
 // 注意：旧的 g_mapDataUpdated 已经删除以修复 LNK2001

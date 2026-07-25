@@ -571,7 +571,11 @@ namespace DX11Hook {
 
     // 贴图缓存
     inline std::unordered_map<std::string, ID3D11ShaderResourceView*> g_headTextures;
-    inline std::unordered_map<std::string, ID3D11ShaderResourceView*> g_playerHeadTextures;
+    struct PlayerHeadTexture {
+        ID3D11ShaderResourceView* srv = nullptr;
+        uint64_t revision = 0;
+    };
+    inline std::unordered_map<std::string, PlayerHeadTexture> g_playerHeadTextures;
     inline bool g_tabHeld = false;
 
     // 程序化生成 12x12 RGBA 面孔贴图
@@ -734,17 +738,44 @@ namespace DX11Hook {
         return srv;
     }
 
-    // 获取玩家皮肤头部贴图（从缓存的 8x8 RGB 像素创建）
-    inline ID3D11ShaderResourceView* GetOrCreatePlayerHeadTexture(const std::string& uuid) {
-        auto it = g_playerHeadTextures.find(uuid);
-        if (it != g_playerHeadTextures.end()) return it->second;
+    inline void ClearPlayerHeadTexturesIfRequested() {
+        if (!MapRenderState::clearPlayerHeadTextures.exchange(false)) return;
+        for (auto& [uuid, texture] : g_playerHeadTextures) {
+            if (texture.srv) texture.srv->Release();
+        }
+        g_playerHeadTextures.clear();
+    }
 
+    inline void RefreshRadarEntitySnapshot(std::vector<RadarEntity>& cachedEntities, uint64_t& cachedGeneration) {
+        const uint64_t publishedGeneration = g_radarGeneration.load(std::memory_order_acquire);
+        if (publishedGeneration == cachedGeneration) return;
+        std::lock_guard<std::mutex> lock(g_radarMutex);
+        cachedEntities = g_radarEntities;
+        cachedGeneration = g_radarGeneration.load(std::memory_order_relaxed);
+    }
+
+    // 获取玩家皮肤头部贴图（从缓存的 8x8 RGBA 像素创建）
+    inline ID3D11ShaderResourceView* GetOrCreatePlayerHeadTexture(const std::string& uuid) {
         PlayerSkinHead head;
         {
             std::lock_guard<std::mutex> lock(g_playerSkinMutex);
             auto hit = g_playerSkinHeads.find(uuid);
-            if (hit == g_playerSkinHeads.end() || !hit->second.valid) return GetOrCreateFaceTexture("player");
+            if (hit == g_playerSkinHeads.end() || !hit->second.valid) {
+                auto texture = g_playerHeadTextures.find(uuid);
+                if (texture != g_playerHeadTextures.end()) {
+                    if (texture->second.srv) texture->second.srv->Release();
+                    g_playerHeadTextures.erase(texture);
+                }
+                return GetOrCreateFaceTexture("player");
+            }
             head = hit->second;
+        }
+
+        auto texture = g_playerHeadTextures.find(uuid);
+        if (texture != g_playerHeadTextures.end()) {
+            if (texture->second.revision == head.revision && texture->second.srv) return texture->second.srv;
+            if (texture->second.srv) texture->second.srv->Release();
+            g_playerHeadTextures.erase(texture);
         }
 
         ID3D11ShaderResourceView* srv = nullptr;
@@ -778,7 +809,8 @@ namespace DX11Hook {
             g_pd3dDevice->CreateShaderResourceView(tex, nullptr, &srv);
             tex->Release();
         }
-        g_playerHeadTextures[uuid] = srv;
+        if (!srv) return GetOrCreateFaceTexture("player");
+        g_playerHeadTextures.emplace(uuid, PlayerHeadTexture{srv, head.revision});
         return srv;
     }
 
@@ -849,7 +881,7 @@ namespace DX11Hook {
         g_regionTextures.clear();
         for(auto& p : g_headTextures) if(p.second) p.second->Release();
         g_headTextures.clear();
-        for(auto& p : g_playerHeadTextures) if(p.second) p.second->Release();
+        for(auto& p : g_playerHeadTextures) if(p.second.srv) p.second.srv->Release();
         g_playerHeadTextures.clear();
         {
             std::lock_guard<std::mutex> lock(g_playerSkinMutex);
@@ -1702,11 +1734,10 @@ namespace DX11Hook {
             }
         }
 
+        ClearPlayerHeadTexturesIfRequested();
         static std::vector<RadarEntity> s_cachedEntities;
-        if (g_radarUpdated.load()) {
-            s_cachedEntities = g_radarEntities;
-            g_radarUpdated.store(false);
-        }
+        static uint64_t s_cachedRadarGeneration = 0;
+        RefreshRadarEntitySnapshot(s_cachedEntities, s_cachedRadarGeneration);
 
         float scale = IM_MAP_R / ZOOM_RADIUS; 
         for (const auto& ent : s_cachedEntities) {
@@ -2285,11 +2316,10 @@ namespace DX11Hook {
         draw_list->AddTriangleFilled(rotate(0, -8.0f), rotate(-5.0f, 8.0f), rotate(5.0f, 8.0f), IM_COL32(220, 20, 20, 255));
 
         if (g_tabHeld) {
+            ClearPlayerHeadTexturesIfRequested();
             static std::vector<RadarEntity> s_cachedEntities;
-            if (g_radarUpdated.load()) {
-                s_cachedEntities = g_radarEntities;
-                g_radarUpdated.store(false);
-            }
+            static uint64_t s_cachedRadarGeneration = 0;
+            RefreshRadarEntitySnapshot(s_cachedEntities, s_cachedRadarGeneration);
             for (const auto& ent : s_cachedEntities) {
                 float dxSelf = ent.x - g_playerX;
                 float dzSelf = ent.z - g_playerZ;
