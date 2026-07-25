@@ -113,6 +113,25 @@ inline void InvalidatePlayerSkinHead(const std::string& uuid) {
     }
 }
 
+inline bool IsLocalRadarPlayer(ClientInstance const& clientInstance, LocalPlayer const& localPlayer, Actor const& actor) {
+    if (&actor == static_cast<Actor const*>(&localPlayer)) return true;
+    if (!actor.isPlayer()) return false;
+
+    if (actor.hasRuntimeID() && localPlayer.hasRuntimeID()
+        && actor.getRuntimeID() == localPlayer.getRuntimeID()) {
+        return true;
+    }
+
+    const auto& actorUniqueId = actor.getOrCreateUniqueID();
+    if (actorUniqueId == localPlayer.getOrCreateUniqueID()
+        || clientInstance.isLocalSplitscreenWith(actorUniqueId)) {
+        return true;
+    }
+
+    auto const& candidatePlayer = static_cast<Player const&>(actor);
+    return candidatePlayer.getUuid() == localPlayer.getUuid();
+}
+
 // 提取并合成玩家皮肤的 8x8 头部正面与第二层。
 inline void ExtractPlayerSkinHead(class Player* player, const std::string& uuid) {
     if (!player || uuid.empty()) return;
@@ -727,7 +746,10 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
             g_playerYaw = player->getRotation().y;
             g_hasPlayer   = true;
             g_localPlayer = player;
-            g_localPlayerUuid = static_cast<std::string>(player->getUuid());
+            {
+                std::lock_guard<std::mutex> lock(g_radarMutex);
+                g_localPlayerUuid = static_cast<std::string>(player->getUuid());
+            }
 
         // ==========================================
         // [防窒息 & 神躯护体] 智能高度推算与无敌降落引擎
@@ -867,6 +889,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                 {
                     std::lock_guard<std::mutex> lock(g_radarMutex);
                     g_radarEntities.clear();
+                    g_localPlayerUuid.clear();
                 }
                 g_radarGeneration.fetch_add(1, std::memory_order_release);
                 {
@@ -1697,11 +1720,9 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
             std::vector<RadarEntity> tempEntities;
             auto& level = player->getLevel();
             const auto& entities = level.getRuntimeActorList();
-            const ActorRuntimeID localRuntimeId = player->getRuntimeID();
-            const mce::UUID localUuid = player->getUuid();
             
             for (auto* actor : entities) {
-                if (!actor || actor == player || actor->getRuntimeID() == localRuntimeId) continue;
+                if (!actor || actor == player) continue;
                 if (!actor->isAlive()) continue;
 
                 const Vec3& ePos = actor->getPosition();
@@ -1717,7 +1738,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                     type = 0;
                     entityType = "player";
                     auto* p = static_cast<class Player*>(actor);
-                    if (p == player || p->getUuid() == localUuid) continue;
+                    if (IsLocalRadarPlayer(*clientInstance, *player, *actor)) continue;
                     uuid = static_cast<std::string>(p->getUuid());
                     ExtractPlayerSkinHead(p, uuid);
                 } else if (actor->hasCategory(ActorCategory::Item)) {
