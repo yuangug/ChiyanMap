@@ -6,10 +6,12 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <algorithm>
 #include <cstring>
 #include <windows.h>
 #include <ll/api/memory/Hook.h>
+#include <ll/api/mod/NativeMod.h>
 #include <mc/client/game/ClientInstance.h>
 #include <mc/client/player/LocalPlayer.h>
 #include <mc/world/actor/player/Player.h>
@@ -1720,6 +1722,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
         }
 
         static int entityDelay = 0;
+        static std::unordered_set<uint64_t> loggedRadarPlayerRuntimeIds;
         if (++entityDelay >= 15) {
             entityDelay = 0;
             std::vector<RadarEntity> tempEntities;
@@ -1744,6 +1747,23 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                     entityType = "player";
                     auto* p = static_cast<class Player*>(actor);
                     if (IsLocalRadarPlayer(*clientInstance, *player, *actor)) continue;
+                    const uint64_t runtimeId = static_cast<uint64_t>(actor->getRuntimeID());
+                    if (loggedRadarPlayerRuntimeIds.insert(runtimeId).second) {
+                        ll::mod::NativeMod::current()->getLogger().info(
+                            "Radar player accepted: runtime={}, unique={}, uuid={}, name='{}', pos=({}, {}, {}); local runtime={}, unique={}, uuid={}, name='{}'",
+                            runtimeId,
+                            actor->getOrCreateUniqueID().rawID,
+                            static_cast<std::string>(p->getUuid()),
+                            p->getNameTag(),
+                            ePos.x,
+                            ePos.y,
+                            ePos.z,
+                            static_cast<uint64_t>(player->getRuntimeID()),
+                            player->getOrCreateUniqueID().rawID,
+                            static_cast<std::string>(player->getUuid()),
+                            player->getNameTag()
+                        );
+                    }
                     uuid = static_cast<std::string>(p->getUuid());
                     ExtractPlayerSkinHead(p, uuid);
                 } else if (actor->hasCategory(ActorCategory::Item)) {
