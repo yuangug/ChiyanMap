@@ -129,7 +129,12 @@ inline bool IsLocalRadarPlayer(ClientInstance const& clientInstance, LocalPlayer
     }
 
     auto const& candidatePlayer = static_cast<Player const&>(actor);
-    return candidatePlayer.getUuid() == localPlayer.getUuid();
+    if (candidatePlayer.getUuid() == localPlayer.getUuid()) return true;
+
+    // Some servers mirror the local client as a separate network player entity.
+    // That proxy has different actor IDs and UUID, but retains the player's name tag.
+    auto const& localNameTag = localPlayer.getNameTag();
+    return !localNameTag.empty() && candidatePlayer.getNameTag() == localNameTag;
 }
 
 // 提取并合成玩家皮肤的 8x8 头部正面与第二层。
