@@ -116,14 +116,17 @@ inline void InvalidatePlayerSkinHead(const std::string& uuid) {
     }
 }
 
-inline bool IsLocalRadarPlayer(ClientInstance const& clientInstance, LocalPlayer const& localPlayer, Actor const& actor) {
+inline bool IsLocalRadarActor(ClientInstance const& clientInstance, LocalPlayer const& localPlayer, Actor const& actor) {
     if (&actor == static_cast<Actor const*>(&localPlayer)) return true;
-    if (!actor.isPlayer()) return false;
 
     if (actor.hasRuntimeID() && localPlayer.hasRuntimeID()
         && actor.getRuntimeID() == localPlayer.getRuntimeID()) {
         return true;
     }
+
+    const std::string typeName = actor.getTypeName();
+    const bool isPlayerProxy = actor.isPlayer() || typeName == "player" || typeName == "minecraft:player";
+    if (!isPlayerProxy) return false;
 
     const auto& actorUniqueId = actor.getOrCreateUniqueID();
     if (actorUniqueId == localPlayer.getOrCreateUniqueID()
@@ -131,13 +134,15 @@ inline bool IsLocalRadarPlayer(ClientInstance const& clientInstance, LocalPlayer
         return true;
     }
 
-    auto const& candidatePlayer = static_cast<Player const&>(actor);
-    if (candidatePlayer.getUuid() == localPlayer.getUuid()) return true;
+    if (actor.isPlayer()) {
+        auto const& candidatePlayer = static_cast<Player const&>(actor);
+        if (candidatePlayer.getUuid() == localPlayer.getUuid()) return true;
+    }
 
     // Some servers mirror the local client as a separate network player entity.
     // That proxy has different actor IDs and UUID, but retains the player's name tag.
     auto const& localNameTag = localPlayer.getNameTag();
-    return !localNameTag.empty() && candidatePlayer.getNameTag() == localNameTag;
+    return !localNameTag.empty() && actor.getNameTag() == localNameTag;
 }
 
 inline void WriteRadarPlayerDiagnostic(
@@ -1756,7 +1761,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
             const auto& entities = level.getRuntimeActorList();
             
             for (auto* actor : entities) {
-                if (!actor || actor == player) continue;
+                if (!actor || IsLocalRadarActor(*clientInstance, *player, *actor)) continue;
                 if (!actor->isAlive()) continue;
 
                 const Vec3& ePos = actor->getPosition();
@@ -1772,7 +1777,6 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                     type = 0;
                     entityType = "player";
                     auto* p = static_cast<class Player*>(actor);
-                    if (IsLocalRadarPlayer(*clientInstance, *player, *actor)) continue;
                     const uint64_t runtimeId = static_cast<uint64_t>(actor->getRuntimeID());
                     if (loggedRadarPlayerRuntimeIds.insert(runtimeId).second) {
                         WriteRadarPlayerDiagnostic(runtimeId, *actor, *p, ePos, *player);
