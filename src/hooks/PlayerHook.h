@@ -9,9 +9,10 @@
 #include <unordered_set>
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <windows.h>
 #include <ll/api/memory/Hook.h>
-#include <ll/api/mod/NativeMod.h>
 #include <mc/client/game/ClientInstance.h>
 #include <mc/client/player/LocalPlayer.h>
 #include <mc/world/actor/player/Player.h>
@@ -137,6 +138,31 @@ inline bool IsLocalRadarPlayer(ClientInstance const& clientInstance, LocalPlayer
     // That proxy has different actor IDs and UUID, but retains the player's name tag.
     auto const& localNameTag = localPlayer.getNameTag();
     return !localNameTag.empty() && candidatePlayer.getNameTag() == localNameTag;
+}
+
+inline void WriteRadarPlayerDiagnostic(
+    uint64_t runtimeId,
+    Actor const& actor,
+    Player const& candidatePlayer,
+    Vec3 const& position,
+    LocalPlayer const& localPlayer
+) {
+    char modulePath[MAX_PATH]{};
+    HMODULE module = GetModuleHandleA("ChiyanMap.dll");
+    if (!module || GetModuleFileNameA(module, modulePath, MAX_PATH) == 0) return;
+
+    std::ofstream output(std::filesystem::path(modulePath).parent_path() / "radar-debug.log", std::ios::app);
+    if (!output) return;
+
+    output << "accepted runtime=" << runtimeId
+           << " unique=" << actor.getOrCreateUniqueID().rawID
+           << " uuid=" << static_cast<std::string>(candidatePlayer.getUuid())
+           << " name=[" << candidatePlayer.getNameTag() << ']'
+           << " pos=(" << position.x << ',' << position.y << ',' << position.z << ')'
+           << " local_runtime=" << static_cast<uint64_t>(localPlayer.getRuntimeID())
+           << " local_unique=" << localPlayer.getOrCreateUniqueID().rawID
+           << " local_uuid=" << static_cast<std::string>(localPlayer.getUuid())
+           << " local_name=[" << localPlayer.getNameTag() << "]\n";
 }
 
 // 提取并合成玩家皮肤的 8x8 头部正面与第二层。
@@ -1749,20 +1775,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                     if (IsLocalRadarPlayer(*clientInstance, *player, *actor)) continue;
                     const uint64_t runtimeId = static_cast<uint64_t>(actor->getRuntimeID());
                     if (loggedRadarPlayerRuntimeIds.insert(runtimeId).second) {
-                        ll::mod::NativeMod::current()->getLogger().info(
-                            "Radar player accepted: runtime={}, unique={}, uuid={}, name='{}', pos=({}, {}, {}); local runtime={}, unique={}, uuid={}, name='{}'",
-                            runtimeId,
-                            actor->getOrCreateUniqueID().rawID,
-                            static_cast<std::string>(p->getUuid()),
-                            p->getNameTag(),
-                            ePos.x,
-                            ePos.y,
-                            ePos.z,
-                            static_cast<uint64_t>(player->getRuntimeID()),
-                            player->getOrCreateUniqueID().rawID,
-                            static_cast<std::string>(player->getUuid()),
-                            player->getNameTag()
-                        );
+                        WriteRadarPlayerDiagnostic(runtimeId, *actor, *p, ePos, *player);
                     }
                     uuid = static_cast<std::string>(p->getUuid());
                     ExtractPlayerSkinHead(p, uuid);
