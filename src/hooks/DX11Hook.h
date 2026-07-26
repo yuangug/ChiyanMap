@@ -1747,11 +1747,8 @@ namespace DX11Hook {
         float scale = IM_MAP_R / ZOOM_RADIUS; 
         for (const auto& ent : s_cachedEntities) {
             if (ent.type == 0 && !s_cachedLocalPlayerUuid.empty() && ent.uuid == s_cachedLocalPlayerUuid) continue;
-            float edx = ent.x - g_playerX;
-            float edz = ent.z - g_playerZ;
-            if (edx * edx + edz * edz < 4.0f) continue;
-            edx = ent.x - pX;
-            edz = ent.z - pZ;
+            float edx = ent.x - pX;
+            float edz = ent.z - pZ;
             float ex, ez;
             if (MapRenderState::bigMapRotateWithPlayer) {
                 float rx = edx * cosY - edz * mapSinY;
@@ -2329,9 +2326,6 @@ namespace DX11Hook {
             RefreshRadarEntitySnapshot(s_cachedEntities, s_cachedLocalPlayerUuid, s_cachedRadarGeneration);
             for (const auto& ent : s_cachedEntities) {
                 if (ent.type == 0 && !s_cachedLocalPlayerUuid.empty() && ent.uuid == s_cachedLocalPlayerUuid) continue;
-                float dxSelf = ent.x - g_playerX;
-                float dzSelf = ent.z - g_playerZ;
-                if (dxSelf * dxSelf + dzSelf * dzSelf < 4.0f) continue;
                 float wx = cx + (ent.x - g_smoothPX) * MapRenderState::bigMapZoom + MapRenderState::bigMapOffsetX;
                 float wz = cy + (ent.z - g_smoothPZ) * MapRenderState::bigMapZoom + MapRenderState::bigMapOffsetZ;
                 if (wx < -50.0f || wx > io.DisplaySize.x + 50.0f || wz < -50.0f || wz > io.DisplaySize.y + 50.0f) continue;
