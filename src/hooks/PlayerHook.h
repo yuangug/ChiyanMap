@@ -116,6 +116,14 @@ inline void InvalidatePlayerSkinHead(const std::string& uuid) {
     }
 }
 
+inline bool IsRadarPlayerLike(Actor const& actor) {
+    const std::string typeName = actor.getTypeName();
+    return actor.isPlayer()
+        || actor.hasCategory(ActorCategory::Player)
+        || typeName == "player"
+        || typeName == "minecraft:player";
+}
+
 inline bool IsLocalRadarActor(ClientInstance const& clientInstance, LocalPlayer const& localPlayer, Actor const& actor) {
     if (&actor == static_cast<Actor const*>(&localPlayer)) return true;
 
@@ -124,9 +132,7 @@ inline bool IsLocalRadarActor(ClientInstance const& clientInstance, LocalPlayer 
         return true;
     }
 
-    const std::string typeName = actor.getTypeName();
-    const bool isPlayerProxy = actor.isPlayer() || typeName == "player" || typeName == "minecraft:player";
-    if (!isPlayerProxy) return false;
+    if (!IsRadarPlayerLike(actor)) return false;
 
     const auto& actorUniqueId = actor.getOrCreateUniqueID();
     if (actorUniqueId == localPlayer.getOrCreateUniqueID()
@@ -137,6 +143,10 @@ inline bool IsLocalRadarActor(ClientInstance const& clientInstance, LocalPlayer 
     if (actor.isPlayer()) {
         auto const& candidatePlayer = static_cast<Player const&>(actor);
         if (candidatePlayer.getUuid() == localPlayer.getUuid()) return true;
+
+        const auto localXuid = localPlayer.getXuid();
+        const auto candidateXuid = candidatePlayer.getXuid();
+        if (!localXuid.empty() && candidateXuid == localXuid) return true;
     }
 
     // Some servers mirror the local client as a separate network player entity.
@@ -1775,16 +1785,18 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                 int type = 2;
                 std::string entityType;
                 std::string uuid;
-                if (actor->isPlayer()) {
+                if (IsRadarPlayerLike(*actor)) {
                     type = 0;
                     entityType = "player";
-                    auto* p = static_cast<class Player*>(actor);
-                    const uint64_t runtimeId = static_cast<uint64_t>(actor->getRuntimeID());
-                    if (loggedRadarPlayerRuntimeIds.insert(runtimeId).second) {
-                        WriteRadarPlayerDiagnostic(runtimeId, *actor, *p, ePos, *player);
+                    if (actor->isPlayer()) {
+                        auto* p = static_cast<class Player*>(actor);
+                        const uint64_t runtimeId = static_cast<uint64_t>(actor->getRuntimeID());
+                        if (loggedRadarPlayerRuntimeIds.insert(runtimeId).second) {
+                            WriteRadarPlayerDiagnostic(runtimeId, *actor, *p, ePos, *player);
+                        }
+                        uuid = static_cast<std::string>(p->getUuid());
+                        ExtractPlayerSkinHead(p, uuid);
                     }
-                    uuid = static_cast<std::string>(p->getUuid());
-                    ExtractPlayerSkinHead(p, uuid);
                 } else if (actor->hasCategory(ActorCategory::Item)) {
                     type = 3;
                     entityType = "item";
