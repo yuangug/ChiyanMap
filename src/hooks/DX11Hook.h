@@ -448,8 +448,6 @@ namespace DX11Hook {
         {"minecraft:bat",              {{80,60,40},{255,255,255},{0,0,0},{50,30,20},{60,40,30},{0,0,0}}},
         {"minecraft:pufferfish",       {{200,200,100},{255,255,255},{0,0,0},{150,150,50},{180,180,80},{0,0,0}}},
         {"minecraft:tropical_fish",    {{255,150,50},{0,0,0},{255,255,255},{200,80,0},{255,200,100},{100,200,255}}},
-        // 玩家
-        {"player",                      {{180,140,100},{255,255,255},{80,60,40},{120,80,60},{100,70,40},{0,0,0}}},
     };
 
     // 生物类型→头像文件名映射（用于 WIC 加载 PNG）
@@ -565,8 +563,6 @@ namespace DX11Hook {
         {"minecraft:cod",               "CodBody.png"},
         {"minecraft:salmon",            "SalmonBody.png"},
         {"minecraft:tropical_fish",     "TropicalFishBody.png"},
-        // 玩家
-        {"player",                      "SteveFace.png"},
     };
 
     // 贴图缓存
@@ -693,6 +689,8 @@ namespace DX11Hook {
 
     // 获取生物头像 SRV（优先从 PNG 加载，失败则程序化生成）
     inline ID3D11ShaderResourceView* GetOrCreateFaceTexture(const std::string& typeName) {
+        // 玩家只允许使用实际皮肤像素，绝不降级为 Steve 或程序化头像。
+        if (typeName == "player" || typeName == "minecraft:player") return nullptr;
         auto it = g_headTextures.find(typeName);
         if (it != g_headTextures.end()) return it->second;
 
@@ -761,6 +759,7 @@ namespace DX11Hook {
 
     // 获取玩家皮肤头部贴图（从缓存的 8x8 RGBA 像素创建）
     inline ID3D11ShaderResourceView* GetOrCreatePlayerHeadTexture(const std::string& uuid) {
+        if (uuid.empty()) return nullptr;
         PlayerSkinHead head;
         {
             std::lock_guard<std::mutex> lock(g_playerSkinMutex);
@@ -771,7 +770,7 @@ namespace DX11Hook {
                     if (texture->second.srv) texture->second.srv->Release();
                     g_playerHeadTextures.erase(texture);
                 }
-                return GetOrCreateFaceTexture("player");
+                return nullptr;
             }
             head = hit->second;
         }
@@ -814,7 +813,7 @@ namespace DX11Hook {
             g_pd3dDevice->CreateShaderResourceView(tex, nullptr, &srv);
             tex->Release();
         }
-        if (!srv) return GetOrCreateFaceTexture("player");
+        if (!srv) return nullptr;
         g_playerHeadTextures.emplace(uuid, PlayerHeadTexture{srv, head.revision});
         return srv;
     }
@@ -1776,7 +1775,7 @@ namespace DX11Hook {
                 ID3D11ShaderResourceView* faceSrv = nullptr;
                 if (ent.type == 0) {
                     faceSrv = GetOrCreatePlayerHeadTexture(ent.uuid);
-                    if (!faceSrv) faceSrv = GetOrCreateFaceTexture("player");
+                    if (!faceSrv) continue;
                 } else if (ent.type == 3) {
                 } else {
                     faceSrv = GetOrCreateFaceTexture(ent.entityType);
@@ -2340,7 +2339,7 @@ namespace DX11Hook {
                 ID3D11ShaderResourceView* faceSrv = nullptr;
                 if (ent.type == 0) {
                     faceSrv = GetOrCreatePlayerHeadTexture(ent.uuid);
-                    if (!faceSrv) faceSrv = GetOrCreateFaceTexture("player");
+                    if (!faceSrv) continue;
                 } else if (ent.type != 3) {
                     faceSrv = GetOrCreateFaceTexture(ent.entityType);
                 }
