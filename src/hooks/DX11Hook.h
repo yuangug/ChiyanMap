@@ -333,6 +333,237 @@ namespace DX11Hook {
         return hwnd;
     }
 
+    namespace NativeIME {
+        inline std::atomic<bool> isTyping{false};
+        inline char* targetBuffer = nullptr;
+        inline size_t targetBufferSize = 0;
+        inline char localBuffer[256] = {};
+        inline WNDPROC oEditProc = nullptr;
+        inline HWND hImeWnd = nullptr;
+
+        inline std::wstring Utf8ToWide(const char* text) {
+            if (!text || !*text) return L"";
+            int count = MultiByteToWideChar(CP_UTF8, 0, text, -1, nullptr, 0);
+            if (count <= 0) return L"";
+            std::wstring wide((size_t)count, L'\0');
+            MultiByteToWideChar(CP_UTF8, 0, text, -1, wide.data(), count);
+            wide.resize((size_t)count - 1);
+            return wide;
+        }
+
+        inline std::string WideToUtf8(const wchar_t* text) {
+            if (!text || !*text) return "";
+            int count = WideCharToMultiByte(CP_UTF8, 0, text, -1, nullptr, 0, nullptr, nullptr);
+            if (count <= 0) return "";
+            std::string utf8((size_t)count, '\0');
+            WideCharToMultiByte(CP_UTF8, 0, text, -1, utf8.data(), count, nullptr, nullptr);
+            utf8.resize((size_t)count - 1);
+            return utf8;
+        }
+
+        inline void SyncTargetBuffer(const std::string& value) {
+            snprintf(localBuffer, sizeof(localBuffer), "%s", value.c_str());
+            if (!targetBuffer || targetBufferSize == 0) return;
+            snprintf(targetBuffer, targetBufferSize, "%s", value.c_str());
+        }
+
+        inline void Close() {
+            HWND hwnd = hImeWnd;
+            if (hwnd) PostMessage(hwnd, WM_CLOSE, 0, 0);
+            isTyping.store(false);
+        }
+
+        inline LRESULT CALLBACK EditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+            if (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP) {
+                if (wParam >= VK_F1 && wParam <= VK_F24) {
+                    if (g_hWnd) PostMessage(g_hWnd, msg, wParam, lParam);
+                    return 0;
+                }
+            }
+            if (msg == WM_KEYDOWN) {
+                if (wParam == VK_RETURN || wParam == VK_ESCAPE) {
+                    Close();
+                    return 0;
+                }
+            }
+            if (msg == WM_SETCURSOR) {
+                SetCursor(LoadCursor(NULL, IDC_ARROW));
+                return TRUE;
+            }
+            return CallWindowProc(oEditProc, hwnd, msg, wParam, lParam);
+        }
+
+        inline void Open(char* buffer, size_t bufferSize, const char*) {
+            if (!buffer || bufferSize == 0) return;
+            if (isTyping.load()) {
+                HWND current = hImeWnd;
+                Close();
+                if (targetBuffer == buffer && current) return;
+            }
+
+            isTyping.store(true);
+            targetBuffer = buffer;
+            targetBufferSize = bufferSize;
+            snprintf(localBuffer, sizeof(localBuffer), "%s", buffer);
+
+            std::thread([]() {
+                constexpr wchar_t kClassName[] = L"ChiyanMapNativeIMEWnd";
+                WNDCLASSW wc = {};
+                wc.lpfnWndProc = [](HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) -> LRESULT {
+                    if (msg == WM_CREATE) {
+                        HWND hEdit = CreateWindowExW(
+                            0,
+                            L"EDIT",
+                            Utf8ToWide(localBuffer).c_str(),
+                            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_LEFT,
+                            10,
+                            10,
+                            250,
+                            22,
+                            hwnd,
+                            (HMENU)1,
+                            NULL,
+                            NULL
+                        );
+                        oEditProc = (WNDPROC)SetWindowLongPtr(hEdit, GWLP_WNDPROC, (LONG_PTR)EditProc);
+                        HFONT hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+                        SendMessage(hEdit, WM_SETFONT, (WPARAM)hFont, MAKELPARAM(FALSE, 0));
+                    } else if (msg == WM_COMMAND) {
+                        if (HIWORD(wParam) == EN_CHANGE) {
+                            HWND hEdit = (HWND)lParam;
+                            int textLen = GetWindowTextLengthW(hEdit);
+                            std::wstring text((size_t)textLen + 1, L'\0');
+                            GetWindowTextW(hEdit, text.data(), textLen + 1);
+                            text.resize((size_t)textLen);
+                            SyncTargetBuffer(WideToUtf8(text.c_str()));
+                        }
+                    } else if (msg == WM_CTLCOLOREDIT || msg == WM_CTLCOLORSTATIC) {
+                        HDC hdc = (HDC)wParam;
+                        SetTextColor(hdc, RGB(240, 240, 240));
+                        SetBkColor(hdc, RGB(35, 35, 35));
+                        static HBRUSH hBrush = CreateSolidBrush(RGB(35, 35, 35));
+                        return (LRESULT)hBrush;
+                    } else if (msg == WM_PAINT) {
+                        PAINTSTRUCT ps;
+                        HDC hdc = BeginPaint(hwnd, &ps);
+                        RECT rc;
+                        GetClientRect(hwnd, &rc);
+                        HBRUSH bg = CreateSolidBrush(RGB(35, 35, 35));
+                        FillRect(hdc, &rc, bg);
+                        DeleteObject(bg);
+                        HPEN pen = CreatePen(PS_SOLID, 2, RGB(80, 80, 80));
+                        HGDIOBJ oldPen = SelectObject(hdc, pen);
+                        MoveToEx(hdc, 0, 0, NULL);
+                        LineTo(hdc, rc.right, 0);
+                        LineTo(hdc, rc.right, rc.bottom);
+                        LineTo(hdc, 0, rc.bottom);
+                        LineTo(hdc, 0, 0);
+                        SelectObject(hdc, oldPen);
+                        DeleteObject(pen);
+                        SetBkMode(hdc, TRANSPARENT);
+                        SetTextColor(hdc, RGB(220, 80, 80));
+                        RECT closeRect = {rc.right - 25, 0, rc.right, rc.bottom};
+                        DrawTextW(hdc, L"X", -1, &closeRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                        EndPaint(hwnd, &ps);
+                        return 0;
+                    } else if (msg == WM_LBUTTONDOWN) {
+                        RECT rc;
+                        GetClientRect(hwnd, &rc);
+                        int x = LOWORD(lParam);
+                        int y = HIWORD(lParam);
+                        if (x >= rc.right - 30 && x <= rc.right && y >= 0 && y <= rc.bottom) {
+                            Close();
+                            return 0;
+                        }
+                    } else if (msg == WM_SETCURSOR) {
+                        SetCursor(LoadCursor(NULL, IDC_ARROW));
+                        return TRUE;
+                    } else if (msg == WM_CLOSE) {
+                        DestroyWindow(hwnd);
+                        return 0;
+                    } else if (msg == WM_DESTROY) {
+                        isTyping.store(false);
+                        hImeWnd = nullptr;
+                        targetBuffer = nullptr;
+                        targetBufferSize = 0;
+                        PostQuitMessage(0);
+                        return 0;
+                    }
+                    return DefWindowProcW(hwnd, msg, wParam, lParam);
+                };
+                wc.hInstance = GetModuleHandle(NULL);
+                wc.lpszClassName = kClassName;
+                if (!RegisterClassW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+                    isTyping.store(false);
+                    return;
+                }
+
+                RECT gameRect = {0, 0, 1920, 1080};
+                if (g_hWnd) {
+                    GetClientRect(g_hWnd, &gameRect);
+                    POINT tl{gameRect.left, gameRect.top};
+                    POINT br{gameRect.right, gameRect.bottom};
+                    ClientToScreen(g_hWnd, &tl);
+                    ClientToScreen(g_hWnd, &br);
+                    gameRect = {tl.x, tl.y, br.x, br.y};
+                }
+
+                int width = 300;
+                int height = 42;
+                int x = gameRect.left + (gameRect.right - gameRect.left - width) / 2;
+                int y = gameRect.top + (gameRect.bottom - gameRect.top - height) / 2;
+                HWND hwnd = CreateWindowExW(WS_EX_TOOLWINDOW, kClassName, L"", WS_POPUP, x, y, width, height, g_hWnd, NULL, wc.hInstance, NULL);
+                if (!hwnd) {
+                    isTyping.store(false);
+                    return;
+                }
+
+                hImeWnd = hwnd;
+                ShowWindow(hwnd, SW_SHOW);
+                UpdateWindow(hwnd);
+                SetForegroundWindow(hwnd);
+                SetFocus(GetDlgItem(hwnd, 1));
+
+                MSG msg;
+                while (GetMessage(&msg, NULL, 0, 0)) {
+                    TranslateMessage(&msg);
+                    DispatchMessage(&msg);
+                }
+                UnregisterClassW(kClassName, wc.hInstance);
+            }).detach();
+        }
+
+        inline void MaintainCursorVisibility() {
+            static bool wasTyping = false;
+            static int cursorForceCount = 0;
+            bool typing = isTyping.load();
+            if (typing && !wasTyping) {
+                wasTyping = true;
+                cursorForceCount = 0;
+                int count = ShowCursor(TRUE);
+                ++cursorForceCount;
+                while (count < 0) {
+                    count = ShowCursor(TRUE);
+                    ++cursorForceCount;
+                }
+            } else if (!typing && wasTyping) {
+                wasTyping = false;
+                while (cursorForceCount > 0) {
+                    ShowCursor(FALSE);
+                    --cursorForceCount;
+                }
+            }
+        }
+
+        inline bool ShouldSuppressGameFocusMessage(UINT msg, WPARAM wParam) {
+            if (!isTyping.load()) return false;
+            if (msg == WM_ACTIVATE && LOWORD(wParam) == WA_INACTIVE) return true;
+            if (msg == WM_ACTIVATEAPP && wParam == FALSE) return true;
+            if (msg == WM_KILLFOCUS) return true;
+            return false;
+        }
+    }
+
     inline const char* ExternalCompassStatusText() {
         switch (MapRenderState::externalCompassStatus.load()) {
         case MapRenderState::ExternalCompassScanning: return "scanning";
@@ -983,15 +1214,18 @@ namespace DX11Hook {
     }
 
     inline LRESULT __stdcall WndProcHook(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+        NativeIME::MaintainCursorVisibility();
+        if (NativeIME::ShouldSuppressGameFocusMessage(uMsg, wParam)) return 0;
+
         if (g_imguiInitialized && g_hasPlayer) {
             ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam);
             
             bool isTyping = false;
             if (ImGui::GetCurrentContext()) {
-                isTyping = ImGui::GetIO().WantCaptureKeyboard;
+                isTyping = ImGui::GetIO().WantCaptureKeyboard || ImGui::GetIO().WantTextInput || NativeIME::isTyping.load();
             }
 
-            if (uMsg == WM_KEYDOWN && wParam == VK_TAB) { if (!isTyping || MapRenderState::IsUIActive()) g_tabHeld = true; }
+            if (uMsg == WM_KEYDOWN && wParam == VK_TAB) { if (!isTyping) g_tabHeld = true; }
             if (uMsg == WM_KEYUP && wParam == VK_TAB) { g_tabHeld = false; }
 
             if (uMsg == WM_KEYDOWN && wParam == 0x4D && !isTyping) {
@@ -1005,6 +1239,7 @@ namespace DX11Hook {
                     }
                 }
                 
+                NativeIME::Close();
                 MapRenderState::showBigMap = !MapRenderState::showBigMap;
 
                 if (MapRenderState::showBigMap) {
@@ -1017,6 +1252,7 @@ namespace DX11Hook {
                 if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) {
                     return CallWindowProc(oWndProc, hWnd, uMsg, wParam, lParam);
                 }
+                NativeIME::Close();
                 MapRenderState::showWaypointUI = !MapRenderState::showWaypointUI;
                 return 1;
             }
@@ -1025,6 +1261,7 @@ namespace DX11Hook {
                 if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) {
                     return CallWindowProc(oWndProc, hWnd, uMsg, wParam, lParam);
                 }
+                NativeIME::Close();
                 MapRenderState::showDeathPointUI = !MapRenderState::showDeathPointUI;
                 return 1;
             }
@@ -1039,6 +1276,7 @@ namespace DX11Hook {
                         return CallWindowProc(oWndProc, hWnd, uMsg, wParam, lParam);
                     }
                 }
+                NativeIME::Close();
                 MapRenderState::showMiniMap = !MapRenderState::showMiniMap;
                 LanguageManager::SaveConfig();
                 return 1;
@@ -1060,6 +1298,7 @@ namespace DX11Hook {
                 
                 // 仅在小地图显示时，才允许切换地图形状并拦截按键
                 if (MapRenderState::showMiniMap) {
+                    NativeIME::Close();
                     MapRenderState::isSquareMap = !MapRenderState::isSquareMap;
                     LanguageManager::SaveConfig();
                     return 1;
@@ -1080,6 +1319,7 @@ namespace DX11Hook {
                         MapRenderState::showWaypointUI = false;
                         MapRenderState::showDeathPointUI = false;
                     }
+                    NativeIME::Close();
                     return 1;
                 }
                 if (uMsg == WM_INPUT || uMsg == WM_INPUT_DEVICE_CHANGE) return 1;
@@ -1096,16 +1336,18 @@ namespace DX11Hook {
     inline LRESULT HandleWndProcFromBRD(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         if (!g_imguiInitialized || !g_hasPlayer) return 0;
         if (hWnd && g_hWnd != hWnd) g_hWnd = hWnd;
+        NativeIME::MaintainCursorVisibility();
+        if (NativeIME::ShouldSuppressGameFocusMessage(uMsg, wParam)) return 1;
 
         ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam);
 
         bool isTyping = false;
         if (ImGui::GetCurrentContext()) {
-            isTyping = ImGui::GetIO().WantCaptureKeyboard;
+            isTyping = ImGui::GetIO().WantCaptureKeyboard || ImGui::GetIO().WantTextInput || NativeIME::isTyping.load();
         }
 
         if (uMsg == WM_KEYDOWN && wParam == VK_TAB) {
-            if (!isTyping || MapRenderState::IsUIActive()) g_tabHeld = true;
+            if (!isTyping) g_tabHeld = true;
         }
         if (uMsg == WM_KEYUP && wParam == VK_TAB) {
             g_tabHeld = false;
@@ -1113,6 +1355,7 @@ namespace DX11Hook {
 
         if (uMsg == WM_KEYDOWN && wParam == 0x4D && !isTyping) {
             if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) return 0;
+            NativeIME::Close();
             MapRenderState::showBigMap = !MapRenderState::showBigMap;
             if (MapRenderState::showBigMap) {
                 MapRenderState::bigMapOffsetX = 0.0f;
@@ -1123,18 +1366,21 @@ namespace DX11Hook {
 
         if (uMsg == WM_KEYDOWN && wParam == 0x55 && !isTyping) {
             if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) return 0;
+            NativeIME::Close();
             MapRenderState::showWaypointUI = !MapRenderState::showWaypointUI;
             return 1;
         }
 
         if (uMsg == WM_KEYDOWN && wParam == 0x49 && !isTyping) {
             if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) return 0;
+            NativeIME::Close();
             MapRenderState::showDeathPointUI = !MapRenderState::showDeathPointUI;
             return 1;
         }
 
         if (uMsg == WM_KEYDOWN && wParam == 0x4E && !isTyping) {
             if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) return 0;
+            NativeIME::Close();
             MapRenderState::showMiniMap = !MapRenderState::showMiniMap;
             LanguageManager::SaveConfig();
             return 1;
@@ -1143,6 +1389,7 @@ namespace DX11Hook {
         if (uMsg == WM_KEYDOWN && wParam == 0x59 && !isTyping) {
             if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) return 0;
             if (!MapRenderState::showMiniMap) return 0;
+            NativeIME::Close();
             MapRenderState::isSquareMap = !MapRenderState::isSquareMap;
             LanguageManager::SaveConfig();
             return 1;
@@ -1161,6 +1408,7 @@ namespace DX11Hook {
                     MapRenderState::showWaypointUI = false;
                     MapRenderState::showDeathPointUI = false;
                 }
+                NativeIME::Close();
                 return 1;
             }
             if (uMsg == WM_INPUT || uMsg == WM_INPUT_DEVICE_CHANGE) return 1;
@@ -1977,6 +2225,7 @@ namespace DX11Hook {
                 if (!found) {
                     ImGui::CloseCurrentPopup();
                     modernInitialized = false;
+                    NativeIME::Close();
                 } else {
                     if (!modernInitialized) {
                         snprintf(modernRenameBuf, sizeof(modernRenameBuf), "%s", targetWaypoint.name.c_str());
@@ -1984,7 +2233,14 @@ namespace DX11Hook {
                     }
                     ImGui::TextColored(OreColor(236, 240, 242), "%s", LanguageManager::GetText("RENAME_WP"));
                     ImGui::Spacing();
-                    ImGui::InputText(LanguageManager::GetText("WP_NAME"), modernRenameBuf, sizeof(modernRenameBuf));
+                    ImGui::TextDisabled("%s", LanguageManager::GetText("WP_NAME"));
+                    ImGui::PushItemWidth(330.0f);
+                    ImGui::InputText("##ModernRenameInput", modernRenameBuf, sizeof(modernRenameBuf));
+                    ImGui::PopItemWidth();
+                    ImGui::SameLine();
+                    if (ModernIconButton("##ModernRenameNativeIME", "\xe2\x9c\x8e", LanguageManager::GetText("NATIVE_IME_TOOLTIP"), IM_COL32(234, 197, 79, 255), IM_COL32(247, 211, 101, 255))) {
+                        NativeIME::Open(modernRenameBuf, sizeof(modernRenameBuf), LanguageManager::GetText("WP_NAME"));
+                    }
                     ImGui::Spacing();
                     if (ModernFullWidthButton("##ModernRenameSave", LanguageManager::GetText("WP_SAVE"), IM_COL32(59, 130, 246, 255), IM_COL32(82, 149, 250, 255))) {
                         {
@@ -1999,11 +2255,13 @@ namespace DX11Hook {
                         WaypointManager::SaveWaypoints();
                         modernInitialized = false;
                         ImGui::CloseCurrentPopup();
+                        NativeIME::Close();
                     }
                     ImGui::Spacing();
                     if (ModernFullWidthButton("##ModernRenameCancel", LanguageManager::GetText("WP_CANCEL"), IM_COL32(34, 40, 49, 255), IM_COL32(46, 55, 66, 255))) {
                         modernInitialized = false;
                         ImGui::CloseCurrentPopup();
+                        NativeIME::Close();
                     }
                 }
                 ImGui::EndPopup();
@@ -2027,13 +2285,23 @@ namespace DX11Hook {
             
             if (!found) {
                 ImGui::CloseCurrentPopup();
+                NativeIME::Close();
             } else {
                 if (!initialized) {
                     snprintf(renameBuf, sizeof(renameBuf), "%s", targetWp.name.c_str());
                     initialized = true;
                 }
                 
-                ImGui::InputText(LanguageManager::GetText("WP_NAME"), renameBuf, sizeof(renameBuf));
+                ImGui::PushItemWidth(220.0f);
+                ImGui::InputText("##RenameInput", renameBuf, sizeof(renameBuf));
+                ImGui::PopItemWidth();
+                ImGui::SameLine();
+                if (ImGui::Button("\xe2\x9c\x8e##RenameNativeIME")) {
+                    NativeIME::Open(renameBuf, sizeof(renameBuf), LanguageManager::GetText("WP_NAME"));
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", LanguageManager::GetText("NATIVE_IME_TOOLTIP"));
+                ImGui::SameLine();
+                ImGui::Text("%s", LanguageManager::GetText("WP_NAME"));
                 ImGui::Spacing();
                 
                 PushOreButtonStyle(OreButtonKind::Success);
@@ -2050,6 +2318,7 @@ namespace DX11Hook {
                     WaypointManager::SaveWaypoints();
                     ImGui::CloseCurrentPopup();
                     initialized = false;
+                    NativeIME::Close();
                 }
                 PopOreButtonStyle();
                 ImGui::SameLine();
@@ -2057,6 +2326,7 @@ namespace DX11Hook {
                 if (ImGui::Button(LanguageManager::GetText("WP_CANCEL"), ImVec2(120, 0))) {
                     ImGui::CloseCurrentPopup();
                     initialized = false;
+                    NativeIME::Close();
                 }
                 PopOreButtonStyle();
             }
@@ -3133,23 +3403,31 @@ namespace DX11Hook {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18.0f, 18.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 7.0f);
 
+        static bool showAddPopup = false;
+        static char searchBuf[256] = "";
+        bool lastShowWPUI = MapRenderState::showWaypointUI;
+        bool lastShowAddPopup = showAddPopup;
+
         if (ImGui::Begin("##ModernWaypointManager", &MapRenderState::showWaypointUI, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoTitleBar)) {
             ImGui::TextColored(OreColor(236, 240, 242), "%s", LanguageManager::GetText("MODERN_WAYPOINT_MANAGER"));
             ImGui::Spacing();
 
-            static bool showAddPopup = false;
-            static char searchBuf[256] = "";
             ImGui::PushStyleColor(ImGuiCol_FrameBg, OreColor(34, 40, 49));
             ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, OreColor(43, 51, 62));
             ImGui::PushStyleColor(ImGuiCol_FrameBgActive, OreColor(43, 51, 62));
             ImGui::PushStyleColor(ImGuiCol_Border, OreColor(79, 90, 105));
             ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 7.0f);
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12.0f, 10.0f));
-            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 150.0f);
+            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 190.0f);
             ImGui::InputTextWithHint("##ModernWaypointSearch", LanguageManager::GetText("SEARCH_HINT"), searchBuf, sizeof(searchBuf));
             ImGui::PopItemWidth();
             ImGui::PopStyleVar(2);
             ImGui::PopStyleColor(4);
+
+            ImGui::SameLine();
+            if (ModernIconButton("##ModernWaypointSearchNativeIME", "\xe2\x9c\x8e", LanguageManager::GetText("NATIVE_IME_TOOLTIP"), IM_COL32(234, 197, 79, 255), IM_COL32(247, 211, 101, 255))) {
+                NativeIME::Open(searchBuf, sizeof(searchBuf), LanguageManager::GetText("SEARCH_HINT"));
+            }
 
             ImGui::SameLine();
             ImVec2 addButtonPos = ImGui::GetCursorScreenPos();
@@ -3160,7 +3438,10 @@ namespace DX11Hook {
             const char* addLabel = LanguageManager::GetText("MODERN_NEW_WAYPOINT");
             ImVec2 addLabelSize = ImGui::CalcTextSize(addLabel);
             drawList->AddText(ImVec2(addButtonPos.x + (132.0f - addLabelSize.x) * 0.5f, addButtonPos.y + 12.0f), IM_COL32(236, 240, 242, 255), addLabel);
-            if (ImGui::IsItemClicked()) showAddPopup = true;
+            if (ImGui::IsItemClicked()) {
+                NativeIME::Close();
+                showAddPopup = true;
+            }
 
             ImGui::Spacing();
             ImGui::BeginChild("##ModernWaypointList", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_NoScrollbar);
@@ -3258,7 +3539,14 @@ namespace DX11Hook {
                 }
                 ImGui::TextColored(OreColor(236, 240, 242), "%s", LanguageManager::GetText("MODERN_NEW_WAYPOINT"));
                 ImGui::Spacing();
-                ImGui::InputText(LanguageManager::GetText("WP_NAME"), nameBuf, sizeof(nameBuf));
+                ImGui::TextDisabled("%s", LanguageManager::GetText("WP_NAME"));
+                ImGui::PushItemWidth(360.0f);
+                ImGui::InputText("##ModernNewWaypointName", nameBuf, sizeof(nameBuf));
+                ImGui::PopItemWidth();
+                ImGui::SameLine();
+                if (ModernIconButton("##ModernNewWaypointNativeIME", "\xe2\x9c\x8e", LanguageManager::GetText("NATIVE_IME_TOOLTIP"), IM_COL32(234, 197, 79, 255), IM_COL32(247, 211, 101, 255))) {
+                    NativeIME::Open(nameBuf, sizeof(nameBuf), LanguageManager::GetText("WP_NAME"));
+                }
                 ImGui::InputInt3("X / Y / Z", position);
                 ImGui::TextDisabled("%s", LanguageManager::GetText("WP_COLOR"));
                 ModernWaypointColorPalette(color);
@@ -3267,11 +3555,13 @@ namespace DX11Hook {
                     WaypointManager::AddWaypoint(nameBuf, position[0], position[1], position[2], color[0], color[1], color[2]);
                     showAddPopup = false;
                     ImGui::CloseCurrentPopup();
+                    NativeIME::Close();
                 }
                 ImGui::Spacing();
                 if (ModernFullWidthButton("##ModernWaypointCancel", LanguageManager::GetText("WP_CANCEL"), IM_COL32(34, 40, 49, 255), IM_COL32(46, 55, 66, 255))) {
                     showAddPopup = false;
                     ImGui::CloseCurrentPopup();
+                    NativeIME::Close();
                 }
                 ImGui::EndPopup();
             }
@@ -3279,9 +3569,12 @@ namespace DX11Hook {
             if (triggerTeleport) {
                 MapRenderState::showWaypointUI = false;
                 MapRenderState::showBigMap = false;
+                NativeIME::Close();
             }
         }
         ImGui::End();
+        if (lastShowAddPopup && !showAddPopup) NativeIME::Close();
+        if (lastShowWPUI && !MapRenderState::showWaypointUI) NativeIME::Close();
         ImGui::PopStyleVar(3);
         ImGui::PopStyleColor(3);
     }
@@ -3294,18 +3587,27 @@ namespace DX11Hook {
         ImGui::SetNextWindowSize(ImVec2(750, 480), ImGuiCond_FirstUseEver); 
         ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2 - 375, ImGui::GetIO().DisplaySize.y / 2 - 240), ImGuiCond_FirstUseEver);
         
+        static bool showAddPopup = false;
+        static char searchBuf[256] = "";
+        bool lastShowWPUI = MapRenderState::showWaypointUI;
+        bool lastShowAddPopup = showAddPopup;
+
         ImGuiWindowFlags winFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
         if (ImGui::Begin(LanguageManager::GetText("WP_MANAGER_TITLE"), &MapRenderState::showWaypointUI, winFlags)) {
             
-            static bool showAddPopup = false;
-            static char searchBuf[256] = "";
-            
-            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 150);
+            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 190);
             ImGui::InputTextWithHint("##WPSearch", LanguageManager::GetText("SEARCH_HINT"), searchBuf, sizeof(searchBuf));
             ImGui::PopItemWidth();
             
             ImGui::SameLine();
+            if (ImGui::Button("\xe2\x9c\x8e##WPSearchNativeIME")) {
+                NativeIME::Open(searchBuf, sizeof(searchBuf), LanguageManager::GetText("SEARCH_HINT"));
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", LanguageManager::GetText("NATIVE_IME_TOOLTIP"));
+
+            ImGui::SameLine();
             if (ImGui::Button(LanguageManager::GetText("NEW_WP_BUTTON"), ImVec2(140, 0))) {
+                NativeIME::Close();
                 showAddPopup = true;
             }
             ImGui::Separator();
@@ -3395,6 +3697,7 @@ namespace DX11Hook {
             if (triggerTp) {
                 MapRenderState::showWaypointUI = false;
                 MapRenderState::showBigMap = false;
+                NativeIME::Close();
             }
             
             ImGui::EndChild();
@@ -3425,7 +3728,16 @@ namespace DX11Hook {
                     MapRenderState::addWaypointZ = -999999;
                 }
 
-                ImGui::InputText(LanguageManager::GetText("WP_NAME"), nameBuf, sizeof(nameBuf));
+                ImGui::PushItemWidth(180.0f);
+                ImGui::InputText("##NewWPName", nameBuf, sizeof(nameBuf));
+                ImGui::PopItemWidth();
+                ImGui::SameLine();
+                if (ImGui::Button("\xe2\x9c\x8e##NewWPNativeIME")) {
+                    NativeIME::Open(nameBuf, sizeof(nameBuf), LanguageManager::GetText("WP_NAME"));
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", LanguageManager::GetText("NATIVE_IME_TOOLTIP"));
+                ImGui::SameLine();
+                ImGui::Text("%s", LanguageManager::GetText("WP_NAME"));
                 ImGui::InputInt3("X / Y / Z", pos);
                 ImGui::ColorEdit3(LanguageManager::GetText("WP_COLOR"), col);
                 
@@ -3435,6 +3747,7 @@ namespace DX11Hook {
                     WaypointManager::AddWaypoint(nameBuf, pos[0], pos[1], pos[2], col[0], col[1], col[2]);
                     showAddPopup = false;
                     ImGui::CloseCurrentPopup();
+                    NativeIME::Close();
                 }
                 PopOreButtonStyle();
                 ImGui::SameLine();
@@ -3442,12 +3755,15 @@ namespace DX11Hook {
                 if (ImGui::Button(LanguageManager::GetText("WP_CANCEL"), ImVec2(120, 0))) {
                     showAddPopup = false;
                     ImGui::CloseCurrentPopup();
+                    NativeIME::Close();
                 }
                 PopOreButtonStyle();
                 ImGui::EndPopup();
             }
         }
         ImGui::End();
+        if (lastShowAddPopup && !showAddPopup) NativeIME::Close();
+        if (lastShowWPUI && !MapRenderState::showWaypointUI) NativeIME::Close();
     }
 
     inline void RenderPositionSettingsPanel() {
@@ -3509,7 +3825,7 @@ namespace DX11Hook {
         };
         // M 键由 BRD 转发的 WndProc 消息处理；这里仅保留 Tab 轮询兜底。
         // 否则 M 会在 WndProc 与轮询中各触发一次，导致切换后立即抵消。
-        g_tabHeld = (readKey(VK_TAB) & 0x8000) != 0;
+        g_tabHeld = !NativeIME::isTyping.load() && (readKey(VK_TAB) & 0x8000) != 0;
 
         g_pd3dDeviceContext->OMSetRenderTargets(1, &rtv, NULL);
         ImGui_ImplDX11_NewFrame();
@@ -3521,7 +3837,7 @@ namespace DX11Hook {
             }
         }
         ImGui::NewFrame();
-        ImGui::GetIO().MouseDrawCursor = MapRenderState::IsUIActive();
+        ImGui::GetIO().MouseDrawCursor = MapRenderState::IsUIActive() && !NativeIME::isTyping.load();
 
         UpdateSmoothCamera();
 
@@ -3652,7 +3968,7 @@ namespace DX11Hook {
             auto renderImGuiFrame = [&](ID3D11RenderTargetView* rtv) {
                 g_pd3dDeviceContext->OMSetRenderTargets(1, &rtv, NULL);
                 ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
-                ImGui::GetIO().MouseDrawCursor = MapRenderState::IsUIActive();
+                ImGui::GetIO().MouseDrawCursor = MapRenderState::IsUIActive() && !NativeIME::isTyping.load();
 
                 UpdateSmoothCamera(); // 更新底层的无极平滑推测坐标！
 
