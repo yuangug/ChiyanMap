@@ -6,6 +6,7 @@
 #include "state/DeathPointManager.h"
 #include "state/LanguageManager.h"
 #include "state/ExternalCompassSync.h"
+#include "state/SeedMapManager.h"
 #include "ll/api/mod/RegisterHelper.h"
 #include <chrono>
 #include <atomic>
@@ -55,6 +56,7 @@ ChiyanMap& ChiyanMap::getInstance() {
 bool ChiyanMap::load() {
     registerAllHooks();
     LanguageManager::Init(); // 初始化语言及配置
+    SeedMapManager::Init();
     ExternalCompassSync::Start();
     MapCacheManager::Init();
     WaypointManager::Init(); // 初始化地标 JSON 引擎
@@ -66,6 +68,7 @@ bool ChiyanMap::enable()  { return true; }
 
 bool ChiyanMap::disable() {
     ExternalCompassSync::Stop();
+    SeedMapManager::Shutdown();
     MapCacheManager::Shutdown();
     unregisterAllHooks();
     return true;
