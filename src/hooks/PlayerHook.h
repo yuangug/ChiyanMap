@@ -3,6 +3,8 @@
 #include <chrono>
 #include <thread>
 #include <atomic>
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -22,12 +24,19 @@
 #include <mc/world/level/block/BlockType.h>
 #include <mc/world/level/biome/Biome.h>
 #include <mc/world/level/material/Material.h>
+#if __has_include(<mc/world/level/material/MaterialType.h>)
 #include <mc/world/level/material/MaterialType.h>
+using ChiyanMapMaterialType = ::MaterialType;
+#else
+#include <mc/deps/shared_types/v1_26_20/block/MaterialType.h>
+using ChiyanMapMaterialType = ::SharedTypes::v1_26_20::MaterialType;
+#endif
 #include "state/WaypointManager.h"
 #include "state/DeathPointManager.h"
 #include <mc/world/level/BlockPos.h>
 #include <mc/deps/core/math/Vec3.h>
 #include <mc/world/level/Level.h>
+#include <mc/world/level/LevelSeed64.h>
 #include <mc/world/actor/Actor.h>
 #include <mc/legacy/ActorRuntimeID.h>
 #include <mc/world/actor/ActorCategory.h>
@@ -48,6 +57,7 @@
 #include "state/MapRenderState.h"
 #include "state/MapCacheManager.h"
 #include "state/LanguageManager.h"
+#include "state/SeedMapManager.h"
 
 using BRD_RegisterClientInstanceUpdateCallback_t = void(*)(void(__stdcall*)(void*, unsigned char));
 using BRD_UnregisterClientInstanceUpdateCallback_t = void(*)(void(__stdcall*)(void*, unsigned char));
@@ -87,6 +97,27 @@ inline bool RegisterBRDClientInstanceUpdateCallback() {
         }
     }
     return true;
+}
+
+struct CapturedLevelSeed final {
+    ChiyanMap::WorldGen::SeedSnapshot seed = ChiyanMap::WorldGen::SeedSnapshot::Unavailable();
+    std::optional<std::uint64_t> rawBits;
+};
+
+// Keep the exact 64-bit seed bits. LevelSeed64::mValue is the ABI-exposed
+// ValueType in both supported LeviLamina headers; do not fall back to
+// Level::getSeed(), which is only 32-bit and makes unrelated worlds collide.
+inline CapturedLevelSeed CaptureLevelSeedSnapshot(Level const& level) noexcept {
+    try {
+        const LevelSeed64 seed = level.getLevelSeed64();
+        const auto seedBits = static_cast<std::uint64_t>(seed.mValue);
+        if (!ChiyanMap::WorldGen::IsUsableCapturedBedrockSeed(seedBits)) {
+            return {ChiyanMap::WorldGen::SeedSnapshot::Unavailable(), seedBits};
+        }
+        return {ChiyanMap::WorldGen::SeedSnapshot::FromSeedBits(seedBits), seedBits};
+    } catch (...) {
+        return {};
+    }
 }
 
 inline void UnregisterBRDClientInstanceUpdateCallback() {
@@ -637,14 +668,14 @@ inline constexpr int kCaveLayerAirSearchDepth = 64;
 inline constexpr int kCaveLayerFloorSearchDepth = 64;
 inline constexpr int kCaveOpenWaterSkySearchRange = 192;
 
-inline MaterialType GetCaveMaterialType(Block const& block) {
+inline ChiyanMapMaterialType GetCaveMaterialType(Block const& block) {
     return block.getBlockType().mMaterial.mType;
 }
 
 inline bool IsCaveWaterBlock(Block const& block) {
     if (block.isAir()) return false;
-    MaterialType material = GetCaveMaterialType(block);
-    return material == MaterialType::Water || material == MaterialType::Bubble;
+    ChiyanMapMaterialType material = GetCaveMaterialType(block);
+    return material == ChiyanMapMaterialType::Water || material == ChiyanMapMaterialType::Bubble;
 }
 
 inline constexpr float kWaterOverlayAlpha = 0.65f;
@@ -665,31 +696,31 @@ inline mce::Color BlendWaterOverFloor(mce::Color floorColor, mce::Color waterTin
 inline bool IsCavePassableBlock(Block const& block) {
     if (block.isAir()) return true;
 
-    MaterialType material = GetCaveMaterialType(block);
+    ChiyanMapMaterialType material = GetCaveMaterialType(block);
     switch (material) {
-    case MaterialType::Air:
-    case MaterialType::Water:
-    case MaterialType::Bubble:
-    case MaterialType::Plant:
-    case MaterialType::SolidPlant:
-    case MaterialType::Leaves:
-    case MaterialType::Glass:
-    case MaterialType::Ice:
-    case MaterialType::PowderSnow:
-    case MaterialType::Cactus:
-    case MaterialType::Fire:
-    case MaterialType::Portal:
-    case MaterialType::Grate:
-    case MaterialType::StoneDecoration:
-    case MaterialType::DecorationSolid:
-    case MaterialType::NonSolid:
-    case MaterialType::StructureVoid:
+    case ChiyanMapMaterialType::Air:
+    case ChiyanMapMaterialType::Water:
+    case ChiyanMapMaterialType::Bubble:
+    case ChiyanMapMaterialType::Plant:
+    case ChiyanMapMaterialType::SolidPlant:
+    case ChiyanMapMaterialType::Leaves:
+    case ChiyanMapMaterialType::Glass:
+    case ChiyanMapMaterialType::Ice:
+    case ChiyanMapMaterialType::PowderSnow:
+    case ChiyanMapMaterialType::Cactus:
+    case ChiyanMapMaterialType::Fire:
+    case ChiyanMapMaterialType::Portal:
+    case ChiyanMapMaterialType::Grate:
+    case ChiyanMapMaterialType::StoneDecoration:
+    case ChiyanMapMaterialType::DecorationSolid:
+    case ChiyanMapMaterialType::NonSolid:
+    case ChiyanMapMaterialType::StructureVoid:
         return true;
     default:
         break;
     }
 
-    if (material == MaterialType::Wood) {
+    if (material == ChiyanMapMaterialType::Wood) {
         std::string const& name = block.getTypeName();
         return name.find("log") != std::string::npos || name.find("stem") != std::string::npos;
     }
@@ -887,7 +918,9 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
         try {
             int dimId = (int)player->getDimensionId();
             std::string rawLevelId = "UnknownWorld";
-            std::string seedStr = "0";
+            const auto seedCapture = CaptureLevelSeedSnapshot(player->getLevel());
+            const auto& seedSnapshot = seedCapture.seed;
+            std::string seedStr = "SeedUnavailable";
             std::string spawnStr = "0_0";
 
             try { 
@@ -895,10 +928,9 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                 if (!lid.empty()) rawLevelId = lid;
             } catch(...) {}
             
-            try { 
-                unsigned int seed = player->getLevel().getSeed();
-                seedStr = std::to_string(seed);
-            } catch(...) {}
+            if (seedCapture.rawBits) {
+                seedStr = std::to_string(*seedCapture.rawBits);
+            }
 
             try { 
                 BlockPos spawn = player->getLevel().getDefaultSpawn();
@@ -923,6 +955,7 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
                 MapCacheManager::SwitchWorld(finalWorldId, dimId);
                 WaypointManager::SwitchWorld(finalWorldId, dimId); 
                 DeathPointManager::SwitchWorld(finalWorldId);
+                SeedMapManager::NotifyWorldChanged(finalWorldId, seedSnapshot, seedCapture.rawBits, dimId);
                 
                 std::memset(g_mapHeights, 0, sizeof(g_mapHeights));
                 std::memset(g_mapColors, 0, sizeof(g_mapColors));
@@ -1821,6 +1854,8 @@ inline void HandleClientInstanceUpdate(ClientInstance* clientInstance, bool isIn
         MapRenderState::showBigMap = false;
         MapRenderState::showWaypointUI = false;
         MapRenderState::showPositionSettings = false;
+        MapRenderState::showSeedMap = false;
+        SeedMapManager::ClearWorldContext();
     }
 
 }

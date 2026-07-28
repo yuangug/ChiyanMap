@@ -29,10 +29,11 @@ namespace MapRenderState {
     inline bool showWaypointUI = false;
     inline bool showDeathPointUI = false;
     inline bool showPositionSettings = false; // 位置调整面板开关
+    inline bool showSeedMap = false;
 
     // [统一拦截枢纽] 判断是否有任何全屏 UI 处于活动状态
     inline bool IsUIActive() {
-        return showBigMap || showWaypointUI || showDeathPointUI || showPositionSettings;
+        return showBigMap || showWaypointUI || showDeathPointUI || showPositionSettings || showSeedMap;
     }
 
     // [新增] 跨菜单桥接：大地图右键唤起新建地标的预设坐标

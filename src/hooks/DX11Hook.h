@@ -31,12 +31,16 @@
 #include <ctime>
 #include <algorithm>
 #include <filesystem>
+#include <limits>
+#include <optional>
 #include <windows.h>
 #include "hooks/PlayerHook.h"
 #include "state/MapCacheManager.h"
 #include "state/WaypointManager.h"
 #include "state/DeathPointManager.h"
 #include "state/ExternalCompassSync.h"
+#include "state/SeedMapIconAtlas.h"
+#include "state/SeedMapManager.h"
 
 #include "state/LanguageManager.h"
 #include <wincodec.h>
@@ -1159,6 +1163,7 @@ namespace DX11Hook {
         MapRenderState::showBigMap = false;
         MapRenderState::showWaypointUI = false;
         MapRenderState::showPositionSettings = false;
+        MapRenderState::showSeedMap = false;
     }
 
     inline bool IsMapWorldActive() {
@@ -1245,6 +1250,23 @@ namespace DX11Hook {
                 if (MapRenderState::showBigMap) {
                     MapRenderState::bigMapOffsetX = 0.0f;
                     MapRenderState::bigMapOffsetZ = 0.0f;
+                } else {
+                    MapRenderState::showSeedMap = false;
+                }
+                return 1;
+            }
+            if (uMsg == WM_KEYDOWN && wParam == 0x4B && !isTyping) {
+                if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) {
+                    return CallWindowProc(oWndProc, hWnd, uMsg, wParam, lParam);
+                }
+                NativeIME::Close();
+                if (!MapRenderState::showBigMap) {
+                    MapRenderState::showBigMap = true;
+                    MapRenderState::bigMapOffsetX = 0.0f;
+                    MapRenderState::bigMapOffsetZ = 0.0f;
+                    MapRenderState::showSeedMap = true;
+                } else {
+                    MapRenderState::showSeedMap = !MapRenderState::showSeedMap;
                 }
                 return 1;
             }
@@ -1318,6 +1340,7 @@ namespace DX11Hook {
                         MapRenderState::showBigMap = false;
                         MapRenderState::showWaypointUI = false;
                         MapRenderState::showDeathPointUI = false;
+                        MapRenderState::showSeedMap = false;
                     }
                     NativeIME::Close();
                     return 1;
@@ -1360,6 +1383,22 @@ namespace DX11Hook {
             if (MapRenderState::showBigMap) {
                 MapRenderState::bigMapOffsetX = 0.0f;
                 MapRenderState::bigMapOffsetZ = 0.0f;
+            } else {
+                MapRenderState::showSeedMap = false;
+            }
+            return 1;
+        }
+
+        if (uMsg == WM_KEYDOWN && wParam == 0x4B && !isTyping) {
+            if (!MapRenderState::IsUIActive() && !CanOpenMapUI()) return 0;
+            NativeIME::Close();
+            if (!MapRenderState::showBigMap) {
+                MapRenderState::showBigMap = true;
+                MapRenderState::bigMapOffsetX = 0.0f;
+                MapRenderState::bigMapOffsetZ = 0.0f;
+                MapRenderState::showSeedMap = true;
+            } else {
+                MapRenderState::showSeedMap = !MapRenderState::showSeedMap;
             }
             return 1;
         }
@@ -1407,6 +1446,7 @@ namespace DX11Hook {
                     MapRenderState::showBigMap = false;
                     MapRenderState::showWaypointUI = false;
                     MapRenderState::showDeathPointUI = false;
+                    MapRenderState::showSeedMap = false;
                 }
                 NativeIME::Close();
                 return 1;
@@ -2373,6 +2413,16 @@ namespace DX11Hook {
         }
 
         ImGui::Spacing();
+        if (ModernFullWidthButton("##ModernOpenSeedMap", LanguageManager::GetText("SEED_MAP_OPEN"), IM_COL32(59, 130, 246, 255), IM_COL32(82, 149, 250, 255))) {
+            MapRenderState::showBigMap = true;
+            MapRenderState::bigMapOffsetX = 0.0f;
+            MapRenderState::bigMapOffsetZ = 0.0f;
+            MapRenderState::showSeedMap = true;
+            ImGui::CloseCurrentPopup();
+            return;
+        }
+
+        ImGui::Spacing();
         ImGui::TextColored(OreColor(135, 144, 154), "%s", LanguageManager::GetText("MODERN_BLUETOOTH"));
         if (ModernSettingCard("##ModernCompassEnable", LanguageManager::GetText("MCOMPASS_ENABLE"), LanguageManager::GetText("MODERN_BLUETOOTH_DETAIL"), &MapRenderState::externalCompassEnabled)) {
             LanguageManager::SaveConfig();
@@ -2449,6 +2499,612 @@ namespace DX11Hook {
         ImGui::PopStyleColor(4);
     }
 
+    inline std::optional<ChiyanMap::WorldGen::BlockRect> g_seedMapVisibleBounds;
+    inline std::optional<ChiyanMap::WorldGen::Dimension> g_seedMapVisibleDimension;
+
+    inline const char* SeedMapDimensionText(ChiyanMap::WorldGen::Dimension dimension) {
+        switch (dimension) {
+        case ChiyanMap::WorldGen::Dimension::Overworld: return LanguageManager::GetText("DIM_OVERWORLD");
+        case ChiyanMap::WorldGen::Dimension::Nether: return LanguageManager::GetText("DIM_NETHER");
+        case ChiyanMap::WorldGen::Dimension::End: return LanguageManager::GetText("DIM_END");
+        }
+        return LanguageManager::GetText("DIM_UNKNOWN");
+    }
+
+    inline const char* SeedMapLayerTextKey(ChiyanMap::WorldGen::LayerId layer) {
+        using ChiyanMap::WorldGen::LayerId;
+        switch (layer) {
+        case LayerId::Village: return "SEED_MAP_LAYER_VILLAGE";
+        case LayerId::PillagerOutpost: return "SEED_MAP_LAYER_PILLAGER_OUTPOST";
+        case LayerId::DesertPyramid: return "SEED_MAP_LAYER_DESERT_PYRAMID";
+        case LayerId::JungleTemple: return "SEED_MAP_LAYER_JUNGLE_TEMPLE";
+        case LayerId::SwampHut: return "SEED_MAP_LAYER_SWAMP_HUT";
+        case LayerId::Igloo: return "SEED_MAP_LAYER_IGLOO";
+        case LayerId::WoodlandMansion: return "SEED_MAP_LAYER_WOODLAND_MANSION";
+        case LayerId::OceanMonument: return "SEED_MAP_LAYER_OCEAN_MONUMENT";
+        case LayerId::OceanRuin: return "SEED_MAP_LAYER_OCEAN_RUIN";
+        case LayerId::Shipwreck: return "SEED_MAP_LAYER_SHIPWRECK";
+        case LayerId::BuriedTreasure: return "SEED_MAP_LAYER_BURIED_TREASURE";
+        case LayerId::RuinedPortal: return "SEED_MAP_LAYER_RUINED_PORTAL";
+        case LayerId::RuinedPortalNether: return "SEED_MAP_LAYER_RUINED_PORTAL_NETHER";
+        case LayerId::Stronghold: return "SEED_MAP_LAYER_STRONGHOLD";
+        case LayerId::Mineshaft: return "SEED_MAP_LAYER_MINESHAFT";
+        case LayerId::AncientCity: return "SEED_MAP_LAYER_ANCIENT_CITY";
+        case LayerId::TrailRuins: return "SEED_MAP_LAYER_TRAIL_RUINS";
+        case LayerId::TrialChambers: return "SEED_MAP_LAYER_TRIAL_CHAMBERS";
+        case LayerId::NetherFortress: return "SEED_MAP_LAYER_NETHER_FORTRESS";
+        case LayerId::BastionRemnant: return "SEED_MAP_LAYER_BASTION_REMNANT";
+        case LayerId::NetherFossil: return "SEED_MAP_LAYER_NETHER_FOSSIL";
+        case LayerId::EndCity: return "SEED_MAP_LAYER_END_CITY";
+        case LayerId::EndGateway: return "SEED_MAP_LAYER_END_GATEWAY";
+        case LayerId::OverworldBiomes: return "SEED_MAP_LAYER_OVERWORLD_BIOMES";
+        case LayerId::NetherBiomes: return "SEED_MAP_LAYER_NETHER_BIOMES";
+        case LayerId::EndBiomes: return "SEED_MAP_LAYER_END_BIOMES";
+        case LayerId::SlimeChunks: return "SEED_MAP_LAYER_SLIME_CHUNKS";
+        case LayerId::OverworldOres: return "SEED_MAP_LAYER_OVERWORLD_ORES";
+        case LayerId::NetherOres: return "SEED_MAP_LAYER_NETHER_ORES";
+        case LayerId::OverworldUndergroundFeatures: return "SEED_MAP_LAYER_UNDERGROUND_FEATURES";
+        case LayerId::DungeonSpawner: return "SEED_MAP_LAYER_DUNGEON_SPAWNER";
+        case LayerId::WorldSpawn: return "SEED_MAP_LAYER_WORLD_SPAWN";
+        case LayerId::MushroomFields: return "SEED_MAP_LAYER_MUSHROOM_FIELDS";
+        case LayerId::CherryGrove: return "SEED_MAP_LAYER_CHERRY_GROVE";
+        case LayerId::Badlands: return "SEED_MAP_LAYER_BADLANDS";
+        case LayerId::IceSpikes: return "SEED_MAP_LAYER_ICE_SPIKES";
+        case LayerId::MangroveSwamp: return "SEED_MAP_LAYER_MANGROVE_SWAMP";
+        case LayerId::PaleGarden: return "SEED_MAP_LAYER_PALE_GARDEN";
+        case LayerId::SoulSandValley: return "SEED_MAP_LAYER_SOUL_SAND_VALLEY";
+        case LayerId::CrimsonForest: return "SEED_MAP_LAYER_CRIMSON_FOREST";
+        case LayerId::WarpedForest: return "SEED_MAP_LAYER_WARPED_FOREST";
+        case LayerId::BasaltDeltas: return "SEED_MAP_LAYER_BASALT_DELTAS";
+        case LayerId::EndSmallIslands: return "SEED_MAP_LAYER_END_SMALL_ISLANDS";
+        case LayerId::EndMidlands: return "SEED_MAP_LAYER_END_MIDLANDS";
+        case LayerId::EndHighlands: return "SEED_MAP_LAYER_END_HIGHLANDS";
+        case LayerId::EndBarrens: return "SEED_MAP_LAYER_END_BARRENS";
+        }
+        return "SEED_MAP_UNKNOWN_LAYER";
+    }
+
+    inline const char* SeedMapLayerText(ChiyanMap::WorldGen::LayerId layer) {
+        return LanguageManager::GetText(SeedMapLayerTextKey(layer));
+    }
+
+    inline ImU32 SeedMapMarkerColor(ChiyanMap::WorldGen::LayerId layer) {
+        if (const auto* icon = ChiyanMap::SeedMapIcons::FindIcon(layer)) {
+            return IM_COL32(icon->accent.r, icon->accent.g, icon->accent.b, 255);
+        }
+        using ChiyanMap::WorldGen::LayerId;
+        switch (layer) {
+        case LayerId::OverworldBiomes:
+        case LayerId::NetherBiomes:
+        case LayerId::EndBiomes:
+            return IM_COL32(64, 196, 112, 255);
+        case LayerId::SlimeChunks:
+            return IM_COL32(105, 214, 99, 255);
+        case LayerId::OverworldOres:
+        case LayerId::NetherOres:
+            return IM_COL32(235, 186, 68, 255);
+        case LayerId::OverworldUndergroundFeatures:
+        case LayerId::DungeonSpawner:
+            return IM_COL32(178, 112, 228, 255);
+        case LayerId::WorldSpawn:
+            return IM_COL32(240, 240, 240, 255);
+        default:
+            return IM_COL32(74, 146, 226, 255);
+        }
+    }
+
+    inline ImVec4 SeedMapMarkerColorFloat(ChiyanMap::WorldGen::LayerId layer) {
+        const ImVec4 color = ImGui::ColorConvertU32ToFloat4(SeedMapMarkerColor(layer));
+        return ImVec4(color.x, color.y, color.z, 1.0f);
+    }
+
+    inline ImU32 SeedMapIconColor(ChiyanMap::SeedMapIcons::IconColor color) {
+        return IM_COL32(color.r, color.g, color.b, 255);
+    }
+
+    inline void DrawSeedMapIcon(
+        ImDrawList* drawList,
+        ChiyanMap::WorldGen::LayerId layer,
+        ImVec2 topLeft,
+        float size
+    ) {
+        const auto* icon = ChiyanMap::SeedMapIcons::FindIcon(layer);
+        if (icon == nullptr) {
+            const float fallbackHalf = std::max(2.0f, size * 0.125f);
+            const ImVec2 center(topLeft.x + size * 0.5f, topLeft.y + size * 0.5f);
+            drawList->AddRectFilled(
+                ImVec2(center.x - fallbackHalf, center.y - fallbackHalf),
+                ImVec2(center.x + fallbackHalf, center.y + fallbackHalf),
+                SeedMapMarkerColor(layer)
+            );
+            return;
+        }
+
+        const float pixelScale = size / static_cast<float>(ChiyanMap::SeedMapIcons::kIconSizePixels);
+        for (const auto& pixel : icon->pixels) {
+            const ImVec2 pixelMin(
+                topLeft.x + static_cast<float>(pixel.x) * pixelScale,
+                topLeft.y + static_cast<float>(pixel.y) * pixelScale
+            );
+            drawList->AddRectFilled(
+                pixelMin,
+                ImVec2(
+                    pixelMin.x + static_cast<float>(pixel.width) * pixelScale,
+                    pixelMin.y + static_cast<float>(pixel.height) * pixelScale
+                ),
+                SeedMapIconColor(pixel.color)
+            );
+        }
+    }
+
+    inline std::optional<ChiyanMap::WorldGen::BlockRect> MakeSeedMapVisibleBounds(
+        float minX,
+        float minZ,
+        float maxX,
+        float maxZ
+    ) {
+        if (!std::isfinite(minX) || !std::isfinite(minZ) || !std::isfinite(maxX) || !std::isfinite(maxZ)) {
+            return std::nullopt;
+        }
+
+        const double floorX = std::floor(static_cast<double>(minX));
+        const double floorZ = std::floor(static_cast<double>(minZ));
+        const double ceilX = std::ceil(static_cast<double>(maxX));
+        const double ceilZ = std::ceil(static_cast<double>(maxZ));
+        constexpr double minInt64 = static_cast<double>(std::numeric_limits<std::int64_t>::min());
+        constexpr double maxInt64 = static_cast<double>(std::numeric_limits<std::int64_t>::max());
+        if (floorX < minInt64 || floorZ < minInt64 || ceilX >= maxInt64 || ceilZ >= maxInt64) return std::nullopt;
+
+        ChiyanMap::WorldGen::BlockRect bounds{
+            static_cast<std::int64_t>(floorX),
+            static_cast<std::int64_t>(floorZ),
+            static_cast<std::int64_t>(ceilX),
+            static_cast<std::int64_t>(ceilZ)
+        };
+        return bounds.IsValid() ? std::optional{bounds} : std::nullopt;
+    }
+
+    inline void RenderSeedMapMarkers(
+        ImDrawList* drawList,
+        float cx,
+        float cy,
+        float minWorldX,
+        float minWorldZ,
+        float maxWorldX,
+        float maxWorldZ
+    ) {
+        const auto currentDimension = SeedMapManager::DimensionFromGameDimensionId(MapRenderState::currentDimensionId);
+        const auto visibleBounds = MakeSeedMapVisibleBounds(minWorldX, minWorldZ, maxWorldX, maxWorldZ);
+        g_seedMapVisibleBounds = visibleBounds;
+        g_seedMapVisibleDimension = currentDimension;
+        if (!visibleBounds || !currentDimension) return;
+
+        const auto settings = SeedMapManager::GetSettings();
+        if (!settings.enabled || settings.targetDimension != *currentDimension) return;
+
+        SeedMapManager::RequestVisibleMap(*visibleBounds);
+        const auto markers = SeedMapManager::GetMarkersInBounds(*visibleBounds, *currentDimension);
+        const auto selected = SeedMapManager::GetSelectedMarker();
+        const ImVec2 mouse = ImGui::GetIO().MousePos;
+        for (const auto& marker : markers) {
+            const auto block = marker.Block();
+            const float screenX = cx + (static_cast<float>(block.x) - g_smoothPX) * MapRenderState::bigMapZoom
+                + MapRenderState::bigMapOffsetX;
+            const float screenY = cy + (static_cast<float>(block.z) - g_smoothPZ) * MapRenderState::bigMapZoom
+                + MapRenderState::bigMapOffsetZ;
+            // Keep markers legible when zoomed out without letting them cover
+            // the map at close range. Pixel geometry and hit testing share the
+            // same scale so the icon never drifts from its clickable area.
+            constexpr float referenceZoom = 3.0f;
+            constexpr float referenceMarkerSize = 32.0f;
+            const float markerSize = std::clamp(
+                referenceMarkerSize * std::sqrt(std::max(MapRenderState::bigMapZoom, 0.0f) / referenceZoom),
+                20.0f,
+                64.0f
+            );
+            const float halfMarkerSize = markerSize * 0.5f;
+            if (screenX < -halfMarkerSize || screenX > ImGui::GetIO().DisplaySize.x + halfMarkerSize
+                || screenY < -halfMarkerSize || screenY > ImGui::GetIO().DisplaySize.y + halfMarkerSize) {
+                continue;
+            }
+
+            const ImVec2 topLeft(screenX - halfMarkerSize, screenY - halfMarkerSize);
+            const ImVec2 bottomRight(screenX + halfMarkerSize, screenY + halfMarkerSize);
+            const ImU32 accent = SeedMapMarkerColor(marker.Layer());
+            DrawSeedMapIcon(drawList, marker.Layer(), topLeft, markerSize);
+
+            const bool isSelected = selected && ChiyanMap::WorldGen::GetMarkerKey(*selected)
+                == ChiyanMap::WorldGen::GetMarkerKey(marker);
+            if (isSelected) drawList->AddRect(topLeft, bottomRight, IM_COL32(232, 168, 74, 255), 0.0f, 0, 2.0f);
+
+            const bool hovered = mouse.x >= topLeft.x && mouse.x <= bottomRight.x
+                && mouse.y >= topLeft.y && mouse.y <= bottomRight.y;
+            if (hovered) {
+                drawList->AddRect(ImVec2(topLeft.x - 2.0f, topLeft.y - 2.0f),
+                                  ImVec2(bottomRight.x + 2.0f, bottomRight.y + 2.0f), accent, 0.0f, 0, 1.0f);
+                if (MapRenderState::showSeedMap && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                    SeedMapManager::SelectMarker(marker);
+                }
+            }
+        }
+    }
+
+    [[nodiscard]] inline std::vector<ChiyanMap::WorldGen::LayerId> CollectEnabledSeedMapLayers(
+        ChiyanMap::WorldGen::Dimension dimension
+    ) {
+        std::vector<ChiyanMap::WorldGen::LayerId> layers;
+        const auto settings = SeedMapManager::GetSettings();
+        if (!settings.enabled || settings.targetDimension != dimension) return layers;
+
+        for (const auto& descriptor : ChiyanMap::WorldGen::LayerCatalog()) {
+            const auto index = static_cast<std::size_t>(descriptor.id);
+            if (descriptor.dimension != dimension
+                || !ChiyanMap::WorldGen::IsMarkerEmissionAllowed(descriptor.support)
+                || index >= settings.enabledLayers.size()
+                || !settings.enabledLayers[index]) {
+                continue;
+            }
+            layers.push_back(descriptor.id);
+        }
+        return layers;
+    }
+
+    struct SeedMapLegendLayout final {
+        ImVec2 position{};
+        ImVec2 size{};
+    };
+
+    [[nodiscard]] inline std::optional<SeedMapLegendLayout> MakeSeedMapLegendLayout() {
+        const auto dimension = SeedMapManager::DimensionFromGameDimensionId(MapRenderState::currentDimensionId);
+        if (!dimension) return std::nullopt;
+        const auto layers = CollectEnabledSeedMapLayers(*dimension);
+        if (layers.empty()) return std::nullopt;
+
+        constexpr float width = 226.0f;
+        constexpr float right = 18.0f;
+        constexpr float bottom = 18.0f;
+        constexpr float rowHeight = 28.0f;
+        constexpr float headerHeight = 34.0f;
+        const ImGuiIO& io = ImGui::GetIO();
+        const float maximumHeight = std::max(112.0f, io.DisplaySize.y - bottom * 2.0f);
+        const float height = std::min(maximumHeight, headerHeight + rowHeight * static_cast<float>(layers.size()));
+        const float y = std::max(bottom, io.DisplaySize.y - bottom - height);
+        return SeedMapLegendLayout{ImVec2(io.DisplaySize.x - width - right, y), ImVec2(width, height)};
+    }
+
+    [[nodiscard]] inline bool IsMouseOverSeedMapLegend() {
+        const auto layout = MakeSeedMapLegendLayout();
+        if (!layout) return false;
+        const ImVec2 mouse = ImGui::GetIO().MousePos;
+        return mouse.x >= layout->position.x && mouse.x <= layout->position.x + layout->size.x
+            && mouse.y >= layout->position.y && mouse.y <= layout->position.y + layout->size.y;
+    }
+
+    inline void RenderSeedMapLegend() {
+        const auto layout = MakeSeedMapLegendLayout();
+        if (!layout) return;
+        const auto dimension = SeedMapManager::DimensionFromGameDimensionId(MapRenderState::currentDimensionId);
+        if (!dimension) return;
+        const auto layers = CollectEnabledSeedMapLayers(*dimension);
+        if (layers.empty()) return;
+
+        const bool modern = MapRenderState::useModernUI;
+        ImGui::SetCursorScreenPos(layout->position);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, modern ? OreColor(18, 22, 27, 235) : OreColor(25, 25, 25, 235));
+        ImGui::PushStyleColor(ImGuiCol_Border, modern ? OreColor(79, 90, 105) : OreColor(100, 100, 100));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+        if (ImGui::BeginChild("##SeedMapLegend", layout->size, true, ImGuiWindowFlags_NoNavFocus)) {
+            ImGui::TextColored(modern ? OreColor(236, 240, 242) : OreColor(234, 197, 79), "%s",
+                               LanguageManager::GetText("SEED_MAP_LEGEND"));
+            ImGui::Separator();
+            for (const auto layer : layers) {
+                ImGui::PushID(static_cast<int>(layer));
+                const ImVec2 iconPosition = ImGui::GetCursorScreenPos();
+                DrawSeedMapIcon(ImGui::GetWindowDrawList(), layer, iconPosition, 20.0f);
+                ImGui::Dummy(ImVec2(24.0f, 20.0f));
+                ImGui::SameLine(0.0f, 7.0f);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(SeedMapLayerText(layer));
+                ImGui::PopID();
+            }
+        }
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(2);
+    }
+
+    inline void CenterSeedMapOnMarker(const ChiyanMap::WorldGen::SeedMapMarker& marker) {
+        const auto block = marker.Block();
+        MapRenderState::bigMapOffsetX = -(static_cast<float>(block.x) - g_smoothPX) * MapRenderState::bigMapZoom;
+        MapRenderState::bigMapOffsetZ = -(static_cast<float>(block.z) - g_smoothPZ) * MapRenderState::bigMapZoom;
+        MapRenderState::showBigMap = true;
+    }
+
+    inline void SaveSeedMapMarkerWaypoint(const ChiyanMap::WorldGen::SeedMapMarker& marker) {
+        const auto block = marker.Block();
+        const auto clampCoordinate = [](std::int64_t value) {
+            return static_cast<int>(std::clamp<std::int64_t>(
+                value,
+                static_cast<std::int64_t>(std::numeric_limits<int>::min()),
+                static_cast<std::int64_t>(std::numeric_limits<int>::max())
+            ));
+        };
+        const auto* descriptor = ChiyanMap::WorldGen::FindLayerDescriptor(marker.Layer());
+        const std::string name = descriptor == nullptr
+            ? std::string(LanguageManager::GetText("SEED_MAP_UNKNOWN_LAYER"))
+            : std::string(SeedMapLayerText(marker.Layer()));
+        const ImVec4 color = SeedMapMarkerColorFloat(marker.Layer());
+        WaypointManager::AddWaypoint(
+            name,
+            clampCoordinate(block.x),
+            static_cast<int>(std::floor(g_playerY)),
+            clampCoordinate(block.z),
+            color.x,
+            color.y,
+            color.z
+        );
+    }
+
+    inline bool RenderSeedMapModeButton(
+        const char* id,
+        const char* label,
+        bool selected,
+        bool modern
+    ) {
+        if (modern) {
+            return ModernFixedButton(
+                id,
+                label,
+                ImVec2((ImGui::GetContentRegionAvail().x - 6.0f) * 0.5f, 34.0f),
+                selected ? IM_COL32(59, 130, 246, 255) : IM_COL32(34, 40, 49, 255),
+                selected ? IM_COL32(82, 149, 250, 255) : IM_COL32(46, 55, 66, 255)
+            );
+        }
+        return ImGui::Button(label, ImVec2((ImGui::GetContentRegionAvail().x - 6.0f) * 0.5f, 28.0f));
+    }
+
+    inline void RenderSeedMapLayerControls(bool modern) {
+        auto settings = SeedMapManager::GetSettings();
+        ImGui::TextColored(modern ? OreColor(135, 144, 154) : OreColor(234, 197, 79), "%s", LanguageManager::GetText("SEED_MAP_LAYERS"));
+        const bool cleared = modern
+            ? ModernFullWidthButton("##SeedMapClearAll", LanguageManager::GetText("SEED_MAP_CLEAR_ALL"),
+                                    IM_COL32(106, 51, 48, 255), IM_COL32(139, 64, 59, 255))
+            : ImGui::Button(LanguageManager::GetText("SEED_MAP_CLEAR_ALL"), ImVec2(-1.0f, 0.0f));
+        if (cleared && SeedMapManager::ClearAllLayers()) {
+            LanguageManager::SaveConfig();
+            settings = SeedMapManager::GetSettings();
+        }
+        for (const auto& descriptor : ChiyanMap::WorldGen::LayerCatalog()) {
+            if (descriptor.dimension != settings.targetDimension) continue;
+
+            ImGui::PushID(static_cast<int>(descriptor.id));
+            const bool queryable = ChiyanMap::WorldGen::IsMarkerEmissionAllowed(descriptor.support);
+            bool enabled = SeedMapManager::IsLayerEnabled(descriptor.id);
+            if (!queryable) ImGui::BeginDisabled();
+            if (ImGui::Checkbox(SeedMapLayerText(descriptor.id), &enabled) && queryable) {
+                SeedMapManager::SetLayerEnabled(descriptor.id, enabled);
+                LanguageManager::SaveConfig();
+            }
+            if (!queryable) ImGui::EndDisabled();
+            ImGui::SameLine();
+            const char* supportLabel = descriptor.support == ChiyanMap::WorldGen::LayerSupportState::FixtureVerified
+                ? LanguageManager::GetText("SEED_MAP_VERIFIED")
+                : descriptor.support == ChiyanMap::WorldGen::LayerSupportState::CubiomesReference
+                    ? LanguageManager::GetText("SEED_MAP_CUBIOMES_REFERENCE")
+                    : descriptor.support == ChiyanMap::WorldGen::LayerSupportState::AlgorithmAwaitingFixture
+                        ? LanguageManager::GetText("SEED_MAP_AWAITING_FIXTURE")
+                        : LanguageManager::GetText("SEED_MAP_UNAVAILABLE_LAYER");
+            ImGui::TextDisabled("%s", supportLabel);
+            ImGui::PopID();
+        }
+    }
+
+    inline void RenderSeedMapResults(bool modern) {
+        const auto settings = SeedMapManager::GetSettings();
+        std::vector<ChiyanMap::WorldGen::SeedMapMarker> markers;
+        if (settings.searchMode == SeedMapManager::SearchMode::Manual) {
+            markers = SeedMapManager::GetManualMarkers();
+        } else if (g_seedMapVisibleBounds && g_seedMapVisibleDimension
+                   && settings.targetDimension == *g_seedMapVisibleDimension) {
+            markers = SeedMapManager::GetMarkersInBounds(*g_seedMapVisibleBounds, *g_seedMapVisibleDimension);
+        }
+
+        ImGui::TextColored(modern ? OreColor(135, 144, 154) : OreColor(234, 197, 79), "%s", LanguageManager::GetText("SEED_MAP_RESULTS"));
+        if (markers.empty()) {
+            ImGui::TextDisabled("%s", LanguageManager::GetText("SEED_MAP_NO_RESULTS"));
+            return;
+        }
+
+        const auto selected = SeedMapManager::GetSelectedMarker();
+        ImGui::BeginChild("##SeedMapResults", ImVec2(0.0f, 112.0f), true, ImGuiWindowFlags_NoScrollbar);
+        for (const auto& marker : markers) {
+            const auto* descriptor = ChiyanMap::WorldGen::FindLayerDescriptor(marker.Layer());
+            const char* label = descriptor == nullptr ? LanguageManager::GetText("SEED_MAP_UNKNOWN_LAYER")
+                                                       : SeedMapLayerText(marker.Layer());
+            const auto block = marker.Block();
+            char row[192];
+            snprintf(row, sizeof(row), "%s  X %lld  Z %lld", label,
+                     static_cast<long long>(block.x), static_cast<long long>(block.z));
+            const bool isSelected = selected && ChiyanMap::WorldGen::GetMarkerKey(*selected)
+                == ChiyanMap::WorldGen::GetMarkerKey(marker);
+            if (ImGui::Selectable(row, isSelected)) SeedMapManager::SelectMarker(marker);
+        }
+        ImGui::EndChild();
+    }
+
+    inline void RenderSeedMapDetail(bool modern) {
+        const auto marker = SeedMapManager::GetSelectedMarker();
+        if (!marker) return;
+
+        const auto* descriptor = ChiyanMap::WorldGen::FindLayerDescriptor(marker->Layer());
+        const char* name = descriptor == nullptr ? LanguageManager::GetText("SEED_MAP_UNKNOWN_LAYER")
+                                                 : SeedMapLayerText(marker->Layer());
+        const auto block = marker->Block();
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextColored(SeedMapMarkerColorFloat(marker->Layer()), "%s", name);
+        ImGui::TextDisabled("%s", descriptor != nullptr
+                && descriptor->support == ChiyanMap::WorldGen::LayerSupportState::FixtureVerified
+            ? LanguageManager::GetText("SEED_MAP_FIXTURE_LOCATION")
+            : LanguageManager::GetText("SEED_MAP_SEED_PREDICTION"));
+        if (descriptor != nullptr) ImGui::TextWrapped("%s", std::string(descriptor->detail).c_str());
+        ImGui::Text("X %lld   Z %lld", static_cast<long long>(block.x), static_cast<long long>(block.z));
+        if (modern) {
+            if (ModernFullWidthButton("##SeedMapCenter", LanguageManager::GetText("SEED_MAP_CENTER"), IM_COL32(59, 130, 246, 255), IM_COL32(82, 149, 250, 255))) {
+                CenterSeedMapOnMarker(*marker);
+            }
+            ImGui::Spacing();
+            if (ModernFullWidthButton("##SeedMapWaypoint", LanguageManager::GetText("SEED_MAP_SAVE_WAYPOINT"), IM_COL32(34, 40, 49, 255), IM_COL32(46, 55, 66, 255))) {
+                SaveSeedMapMarkerWaypoint(*marker);
+            }
+        } else {
+            if (ImGui::Button(LanguageManager::GetText("SEED_MAP_CENTER"), ImVec2(0.0f, 0.0f))) CenterSeedMapOnMarker(*marker);
+            ImGui::SameLine();
+            if (ImGui::Button(LanguageManager::GetText("SEED_MAP_SAVE_WAYPOINT"), ImVec2(0.0f, 0.0f))) {
+                SaveSeedMapMarkerWaypoint(*marker);
+            }
+        }
+    }
+
+    inline void RenderSeedMapPanel() {
+        if (!MapRenderState::showSeedMap) return;
+
+        const bool modern = MapRenderState::useModernUI;
+        ImGuiIO& io = ImGui::GetIO();
+        const float width = modern ? 370.0f : 330.0f;
+        const float height = std::clamp(io.DisplaySize.y - 110.0f, 360.0f, 760.0f);
+        ImGui::SetNextWindowPos(ImVec2(18.0f, modern ? 82.0f : 70.0f), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_Always);
+        if (modern) {
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, OreColor(25, 29, 34, 250));
+            ImGui::PushStyleColor(ImGuiCol_Border, OreColor(79, 90, 105));
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, OreColor(18, 22, 27, 210));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 16.0f));
+        }
+
+        const char* windowName = modern ? "##ModernSeedMap" : "##ClassicSeedMap";
+        if (ImGui::Begin(windowName, &MapRenderState::showSeedMap,
+                         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings)) {
+            ImGui::TextColored(modern ? OreColor(236, 240, 242) : OreColor(234, 197, 79), "%s", LanguageManager::GetText("SEED_MAP_TITLE"));
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", LanguageManager::GetText("SEED_MAP_PROFILE"));
+            ImGui::Separator();
+
+            const auto status = SeedMapManager::GetStatus();
+            ImGui::TextDisabled("%s", LanguageManager::GetText("SEED_MAP_AUTO_SEED"));
+            ImGui::SameLine();
+            ImGui::TextColored(status.seedAvailable ? OreColor(33, 204, 76) : OreColor(221, 91, 91), "%s",
+                               status.seedAvailable ? LanguageManager::GetText("SEED_MAP_CAPTURED")
+                                                    : LanguageManager::GetText("SEED_MAP_UNAVAILABLE"));
+            if (status.capturedSeedBits) {
+                ImGui::TextDisabled("%s", LanguageManager::GetText("SEED_MAP_RAW_SEED"));
+                ImGui::SameLine();
+                ImGui::Text("%llu (0x%016llX)",
+                              static_cast<unsigned long long>(*status.capturedSeedBits),
+                              static_cast<unsigned long long>(*status.capturedSeedBits));
+            }
+            ImGui::TextDisabled("Candidates %llu  Markers %llu",
+                                static_cast<unsigned long long>(status.cachedQueryStatistics.placementCandidates),
+                                static_cast<unsigned long long>(status.cachedQueryStatistics.emittedMarkers));
+            ImGui::TextDisabled("Biome rejected %llu",
+                                static_cast<unsigned long long>(status.cachedQueryStatistics.biomeRejectedCandidates));
+
+            auto settings = SeedMapManager::GetSettings();
+            ImGui::TextDisabled("%s", LanguageManager::GetText("SEED_MAP_DIMENSION"));
+            ImGui::SameLine();
+            if (ImGui::BeginCombo("##SeedMapDimension", SeedMapDimensionText(settings.targetDimension))) {
+                constexpr std::array dimensions{
+                    ChiyanMap::WorldGen::Dimension::Overworld,
+                    ChiyanMap::WorldGen::Dimension::Nether,
+                    ChiyanMap::WorldGen::Dimension::End
+                };
+                for (const auto dimension : dimensions) {
+                    const bool selected = dimension == settings.targetDimension;
+                    if (ImGui::Selectable(SeedMapDimensionText(dimension), selected)) {
+                        settings.targetDimension = dimension;
+                        SeedMapManager::SetSettings(settings);
+                        LanguageManager::SaveConfig();
+                        settings = SeedMapManager::GetSettings();
+                    }
+                    if (selected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+
+            ImGui::Spacing();
+            if (RenderSeedMapModeButton("##SeedMapVisible", LanguageManager::GetText("SEED_MAP_VISIBLE"),
+                                        settings.searchMode == SeedMapManager::SearchMode::VisibleMap, modern)) {
+                settings.searchMode = SeedMapManager::SearchMode::VisibleMap;
+                SeedMapManager::SetSettings(settings);
+                LanguageManager::SaveConfig();
+                settings = SeedMapManager::GetSettings();
+            }
+            ImGui::SameLine();
+            if (RenderSeedMapModeButton("##SeedMapManual", LanguageManager::GetText("SEED_MAP_MANUAL"),
+                                        settings.searchMode == SeedMapManager::SearchMode::Manual, modern)) {
+                settings.searchMode = SeedMapManager::SearchMode::Manual;
+                SeedMapManager::SetSettings(settings);
+                LanguageManager::SaveConfig();
+                settings = SeedMapManager::GetSettings();
+            }
+
+            ImGui::Spacing();
+            ImGui::BeginChild("##SeedMapControls", ImVec2(0.0f, settings.searchMode == SeedMapManager::SearchMode::Manual ? 225.0f : 168.0f), false);
+            RenderSeedMapLayerControls(modern);
+            if (settings.searchMode == SeedMapManager::SearchMode::Manual) {
+                ImGui::Separator();
+                bool changed = false;
+                changed |= ImGui::InputScalar(LanguageManager::GetText("SEED_MAP_SEARCH_X"), ImGuiDataType_S64,
+                                              &settings.manualCenterX, nullptr, nullptr, "%lld");
+                changed |= ImGui::InputScalar(LanguageManager::GetText("SEED_MAP_SEARCH_Z"), ImGuiDataType_S64,
+                                              &settings.manualCenterZ, nullptr, nullptr, "%lld");
+                changed |= ImGui::InputScalar(LanguageManager::GetText("SEED_MAP_RADIUS"), ImGuiDataType_S64,
+                                              &settings.manualRadius, nullptr, nullptr, "%lld");
+                if (changed) {
+                    SeedMapManager::SetSettings(settings);
+                    LanguageManager::SaveConfig();
+                    settings = SeedMapManager::GetSettings();
+                }
+                if (modern) {
+                    if (ModernFullWidthButton("##SeedMapSearch", LanguageManager::GetText("SEED_MAP_SEARCH"), IM_COL32(59, 130, 246, 255), IM_COL32(82, 149, 250, 255))) {
+                        SeedMapManager::StartManualSearch(settings.manualCenterX, settings.manualCenterZ, settings.manualRadius);
+                        LanguageManager::SaveConfig();
+                    }
+                } else if (ImGui::Button(LanguageManager::GetText("SEED_MAP_SEARCH"), ImVec2(-1.0f, 0.0f))) {
+                    SeedMapManager::StartManualSearch(settings.manualCenterX, settings.manualCenterZ, settings.manualRadius);
+                    LanguageManager::SaveConfig();
+                }
+            }
+            ImGui::EndChild();
+
+            const auto progress = SeedMapManager::GetManualSearchProgress();
+            if (settings.searchMode == SeedMapManager::SearchMode::Manual && progress.requested) {
+                char progressText[96];
+                snprintf(progressText, sizeof(progressText), LanguageManager::GetText("SEED_MAP_PROGRESS"),
+                         progress.completedTiles, progress.totalTiles);
+                ImGui::TextDisabled("%s", progressText);
+                const float fraction = progress.totalTiles == 0 ? 0.0f
+                    : static_cast<float>(progress.completedTiles) / static_cast<float>(progress.totalTiles);
+                ImGui::ProgressBar(fraction, ImVec2(-1.0f, 0.0f));
+            } else if (settings.searchMode == SeedMapManager::SearchMode::VisibleMap) {
+                ImGui::TextDisabled("%s", LanguageManager::GetText("SEED_MAP_WORKING"));
+            }
+            if (status.currentGameDimension && settings.targetDimension != *status.currentGameDimension) {
+                ImGui::TextColored(OreColor(234, 197, 79), "%s", LanguageManager::GetText("SEED_MAP_DIMENSION_MISMATCH"));
+            }
+
+            ImGui::Separator();
+            RenderSeedMapResults(modern);
+            RenderSeedMapDetail(modern);
+        }
+        ImGui::End();
+        if (modern) {
+            ImGui::PopStyleVar(2);
+            ImGui::PopStyleColor(3);
+        }
+    }
+
     inline void RenderImGuiBigMap() {
         if (MapRenderState::clearGPUCache.load()) {
             for(auto& p : g_regionSRVs) if(p.second) p.second->Release();
@@ -2472,7 +3128,8 @@ namespace DX11Hook {
         ImGui::Begin("BigMapCanvas", nullptr, window_flags);
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-        bool isHoveringCanvas = ImGui::IsWindowHovered();
+        const bool isHoveringLegend = IsMouseOverSeedMapLegend();
+        bool isHoveringCanvas = ImGui::IsWindowHovered() && !isHoveringLegend;
 
         static bool s_isDraggingMap = false;
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && isHoveringCanvas) {
@@ -2574,6 +3231,12 @@ namespace DX11Hook {
             
             draw_list->AddCallback(LinearSamplerCallback, nullptr);
         }
+
+        // Seed predictions are composited after terrain but before the player,
+        // entities, and waypoint overlays. The manager only returns markers
+        // from pure cached worker results.
+        RenderSeedMapMarkers(draw_list, cx, cy, minWx, minWz, maxWx, maxWz);
+        RenderSeedMapLegend();
         
         float px = cx + MapRenderState::bigMapOffsetX;
         float py = cy + MapRenderState::bigMapOffsetZ;
@@ -2842,6 +3505,13 @@ namespace DX11Hook {
             bool modernUiChanged = ImGui::Checkbox(LanguageManager::GetText("USE_MODERN_UI"), &MapRenderState::useModernUI);
             if (modernUiChanged) {
                 LanguageManager::SaveConfig();
+            }
+            if (ImGui::Button(LanguageManager::GetText("SEED_MAP_OPEN"), ImVec2(ImGui::GetContentRegionAvail().x, 32.0f))) {
+                MapRenderState::showBigMap = true;
+                MapRenderState::bigMapOffsetX = 0.0f;
+                MapRenderState::bigMapOffsetZ = 0.0f;
+                MapRenderState::showSeedMap = true;
+                ImGui::CloseCurrentPopup();
             }
             ImGui::Spacing();
             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
@@ -3168,6 +3838,8 @@ namespace DX11Hook {
 
         // 调用大地图右键地标重命名弹窗模块
         RenderRenameModal((std::string(LanguageManager::GetText("RENAME_WP")) + "##ModalBigMap").c_str(), bigMapRenameId, bigMapTriggerRename);
+
+        RenderSeedMapPanel();
 
         ImGui::End();
         ImGui::PopStyleVar(2);
