@@ -64,6 +64,9 @@ inline constexpr IconColor kSoul{93, 137, 158};
 inline constexpr IconColor kCrimson{177, 55, 70};
 inline constexpr IconColor kWarped{46, 157, 150};
 inline constexpr IconColor kBasalt{92, 88, 94};
+inline constexpr IconColor kSlimeDark{45, 122, 54};
+inline constexpr IconColor kSlime{105, 214, 99};
+inline constexpr IconColor kSlimeHighlight{170, 238, 129};
 
 inline constexpr IconPixel kVillage[] = {
     {2, 14, 16, 3, kStone}, {4, 7, 12, 7, kDarkOak}, {2, 5, 16, 2, kTerracotta},
@@ -209,6 +212,11 @@ inline constexpr IconPixel kEndBarrens[] = {
     {2, 16, 16, 2, kEndStone}, {4, 13, 12, 3, kEndStone}, {7, 11, 6, 2, kEndStone},
     {9, 8, 2, 3, kPurpur},
 };
+inline constexpr IconPixel kSlimeChunks[] = {
+    {4, 4, 12, 12, kSlimeDark}, {5, 3, 10, 1, kSlimeHighlight}, {3, 5, 1, 10, kSlimeHighlight},
+    {5, 5, 10, 9, kSlime}, {6, 6, 2, 2, kSlimeHighlight}, {12, 6, 2, 2, kSlimeHighlight},
+    {7, 9, 2, 2, kOutline}, {11, 9, 2, 2, kOutline}, {7, 13, 6, 1, kSlimeDark},
+};
 
 inline constexpr std::array kIcons{
     IconDefinition{WorldGen::LayerId::Village, kVillage, kTerracotta, "44:608"},
@@ -247,6 +255,7 @@ inline constexpr std::array kIcons{
     IconDefinition{WorldGen::LayerId::EndMidlands, kEndMidlands, kEndStone, "50:46"},
     IconDefinition{WorldGen::LayerId::EndHighlands, kEndHighlands, kEndStone, "50:47"},
     IconDefinition{WorldGen::LayerId::EndBarrens, kEndBarrens, kEndStone, "50:48"},
+    IconDefinition{WorldGen::LayerId::SlimeChunks, kSlimeChunks, kSlime, "51:110"},
 };
 
 } // namespace Detail

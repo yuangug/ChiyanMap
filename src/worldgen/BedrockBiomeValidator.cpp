@@ -152,6 +152,11 @@ bool Bedrock2620StructureFinder::IsStructureViable(LayerId layer, BlockPosition 
                                 static_cast<int>(anchor.z), 0) != 0;
 }
 
+bool Bedrock2620StructureFinder::IsSlimeChunk(ChunkPosition chunk) noexcept {
+    if (!IsIntCoordinate(chunk.x) || !IsIntCoordinate(chunk.z)) return false;
+    return isSlimeChunk(static_cast<int>(chunk.x), static_cast<int>(chunk.z)) != 0;
+}
+
 std::vector<BlockPosition> Bedrock2620StructureFinder::FindRareBiomeAnchors(
     LayerId layer,
     BlockRect bounds

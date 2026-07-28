@@ -112,12 +112,61 @@ void TestSeedMapIconAtlas() {
     for (const LayerDescriptor& descriptor : LayerCatalog()) {
         if (!IsMarkerEmissionAllowed(descriptor.support)) continue;
         if (descriptor.algorithm != PlacementAlgorithm::CubiomesFinder
-            && descriptor.algorithm != PlacementAlgorithm::BiomeNoise) continue;
+            && descriptor.algorithm != PlacementAlgorithm::BiomeNoise
+            && descriptor.algorithm != PlacementAlgorithm::ChunkPopulation) continue;
         const IconDefinition* icon = FindIcon(descriptor.id);
         assert(icon != nullptr);
         assert(!icon->pixels.empty());
         assert(!icon->figmaCardId.empty());
     }
+}
+
+void TestBedrock2620SlimeChunks() {
+    constexpr ChunkPosition slimeChunk{-586, 434};
+    constexpr ChunkPosition adjacentChunk{-585, 434};
+    Bedrock2620StructureFinder finder{114514U};
+    assert(finder.IsSlimeChunk(slimeChunk));
+    assert(!finder.IsSlimeChunk(adjacentChunk));
+
+    const LayerQuery exactChunk{
+        SeedSnapshot::FromLevelSeed(114514),
+        WorldGenProfile::Bedrock2620,
+        Dimension::Overworld,
+        LayerId::SlimeChunks,
+        BlockRect{-9376, 6944, -9360, 6960},
+    };
+    assert(exactChunk.Bounds().Contains(BlockPosition{-9371, 6953}));
+    const LayerQueryResult result = QueryPlacementCandidates(exactChunk);
+    assert(result.status == QueryStatus::Ok);
+    assert(result.support == LayerSupportState::FixtureVerified);
+    assert(result.statistics.placementCandidates == 1);
+    assert(result.statistics.biomeRejectedCandidates == 0);
+    assert(result.statistics.emittedMarkers == 1);
+    assert(result.markers.size() == 1);
+    assert(result.markers.front().Chunk() == slimeChunk);
+    assert((result.markers.front().Block() == BlockPosition{-9368, 6952}));
+    assert(result.markers.front().Kind() == MarkerKind::ChunkRegion);
+
+    const LayerQuery excludesNeighbor{
+        SeedSnapshot::FromLevelSeed(114514),
+        WorldGenProfile::Bedrock2620,
+        Dimension::Overworld,
+        LayerId::SlimeChunks,
+        BlockRect{-9360, 6944, -9344, 6960},
+    };
+    assert(QueryPlacementCandidates(excludesNeighbor).markers.empty());
+
+    const auto tile = QueryPlacementCandidatesForTile(
+        SeedSnapshot::FromLevelSeed(114514), WorldGenProfile::Bedrock2620, Dimension::Overworld,
+        LayerId::SlimeChunks, TileCoordinate{-10, 6}
+    );
+    const auto neighborTile = QueryPlacementCandidatesForTile(
+        SeedSnapshot::FromLevelSeed(114514), WorldGenProfile::Bedrock2620, Dimension::Overworld,
+        LayerId::SlimeChunks, TileCoordinate{-9, 6}
+    );
+    std::vector<SeedMapMarker> joined = tile.markers;
+    joined.insert(joined.end(), neighborTile.markers.begin(), neighborTile.markers.end());
+    assert(DeduplicateMarkers(joined).size() == joined.size());
 }
 
 void TestCubiomesReferenceLayersCanQuery() {
@@ -295,11 +344,14 @@ void TestSeedMapManagerIntegration() {
 
     assert(SetLayerEnabled(LayerId::Village, true));
     assert(SetLayerEnabled(LayerId::EndCity, true));
+    assert(SetLayerEnabled(LayerId::SlimeChunks, true));
     assert(IsLayerEnabled(LayerId::Village));
     assert(IsLayerEnabled(LayerId::EndCity));
+    assert(IsLayerEnabled(LayerId::SlimeChunks));
     assert(ClearAllLayers());
     assert(!IsLayerEnabled(LayerId::Village));
     assert(!IsLayerEnabled(LayerId::EndCity));
+    assert(!IsLayerEnabled(LayerId::SlimeChunks));
     assert(!ClearAllLayers());
 
     ClearWorldContext();
@@ -326,6 +378,7 @@ int main() {
     TestRareBiomeQueriesUseSeedOnlyBiomeNoise();
     TestNetherAndEndBiomeQueriesUseSeedOnlyBiomeNoise();
     TestOuterEndGatewayQueryUsesSeedOnlyFinder();
+    TestBedrock2620SlimeChunks();
     TestUnsupportedLayersNeverEmitMarkers();
     TestSeedMapManagerIntegration();
 }
