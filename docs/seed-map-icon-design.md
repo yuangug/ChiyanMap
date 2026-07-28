@@ -87,6 +87,12 @@ Last updated: 2026-07-28
 
 ## Game Atlas
 
+- Added `Card / Slime Chunk` (`51:110`) as the visual authority for the green
+  Minecraft slime-cube icon. Its 20px grid is transcribed into
+  `SeedMapIconAtlas.h` for the control panel and right-bottom legend. On the
+  map itself, a Slime Chunk uses the full translucent 16x16 cell rather than a
+  dense center icon, while hover and selection use that real chunk footprint.
+
 - The game now draws 20px data-only pixel icons instead of circular structure
   markers. The atlas contains one bounded, unique pattern for every enabled
   cubiomes structure, the six rare overworld layers, four Nether biome layers,

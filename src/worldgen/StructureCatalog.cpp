@@ -2,6 +2,7 @@
 
 #include "worldgen/BedrockBiomeValidator.h"
 #include <array>
+#include <limits>
 
 namespace ChiyanMap::WorldGen {
 namespace {
@@ -64,8 +65,9 @@ constexpr std::array kLayers{
                     PlacementAlgorithm::BiomeNoise, "Biome noise model has no approved Bedrock 26.20 fixture."},
     LayerDescriptor{LayerId::EndBiomes, "End Biomes", Dimension::End, LayerSupportState::Unavailable,
                     PlacementAlgorithm::BiomeNoise, "Biome noise model has no approved Bedrock 26.20 fixture."},
-    LayerDescriptor{LayerId::SlimeChunks, "Slime Chunks", Dimension::Overworld, LayerSupportState::Unavailable,
-                    PlacementAlgorithm::ChunkPopulation, "No verified Bedrock 26.20 slime-chunk fixture."},
+    LayerDescriptor{LayerId::SlimeChunks, "Slime Chunks", Dimension::Overworld, LayerSupportState::FixtureVerified,
+                    PlacementAlgorithm::ChunkPopulation,
+                    "Bedrock 26.20 cubiomes isSlimeChunk rule; full 16x16 chunk cells are shown."},
     LayerDescriptor{LayerId::OverworldOres, "Overworld Ores", Dimension::Overworld, LayerSupportState::Unavailable,
                     PlacementAlgorithm::ChunkPopulation, "Ore placement requires a verified chunk-population model."},
     LayerDescriptor{LayerId::NetherOres, "Nether Ores", Dimension::Nether, LayerSupportState::Unavailable,
@@ -143,10 +145,41 @@ LayerQueryResult QueryPlacementCandidates(const LayerQuery& query) {
     // client object crosses into this pure seed-map query.
     const auto seedBits = query.Seed().TrySeedBits();
     if (!seedBits) return {QueryStatus::SeedUnavailable, descriptor->support, {}};
-    Bedrock2620StructureFinder structureFinder{query.TargetDimension(), *seedBits};
 
     LayerQueryResult result;
     result.support = descriptor->support;
+    if (query.Layer() == LayerId::SlimeChunks) {
+        const std::int64_t minChunkX = FloorDivide(query.Bounds().minX, 16);
+        const std::int64_t minChunkZ = FloorDivide(query.Bounds().minZ, 16);
+        const std::int64_t maxChunkX = FloorDivide(query.Bounds().maxXExclusive - 1, 16);
+        const std::int64_t maxChunkZ = FloorDivide(query.Bounds().maxZExclusive - 1, 16);
+        constexpr std::int64_t minCubiomesChunk = std::numeric_limits<int>::min();
+        constexpr std::int64_t maxCubiomesChunk = std::numeric_limits<int>::max();
+        if (minChunkX < minCubiomesChunk || minChunkZ < minCubiomesChunk
+            || maxChunkX > maxCubiomesChunk || maxChunkZ > maxCubiomesChunk) {
+            return {QueryStatus::CoordinateOverflow, descriptor->support, {}};
+        }
+
+        for (std::int64_t chunkZ = minChunkZ; chunkZ <= maxChunkZ; ++chunkZ) {
+            for (std::int64_t chunkX = minChunkX; chunkX <= maxChunkX; ++chunkX) {
+                const ChunkPosition chunk{chunkX, chunkZ};
+                if (!Bedrock2620StructureFinder::IsSlimeChunk(chunk)) continue;
+
+                ++result.statistics.placementCandidates;
+                result.markers.emplace_back(
+                    query.Layer(),
+                    query.TargetDimension(),
+                    chunk,
+                    BlockPosition{chunkX * 16 + 8, chunkZ * 16 + 8},
+                    MarkerKind::ChunkRegion
+                );
+                ++result.statistics.emittedMarkers;
+            }
+        }
+        return result;
+    }
+
+    Bedrock2620StructureFinder structureFinder{query.TargetDimension(), *seedBits};
     if (descriptor->algorithm == PlacementAlgorithm::BiomeNoise) {
         const auto anchors = structureFinder.FindRareBiomeAnchors(query.Layer(), query.Bounds());
         for (const BlockPosition anchor : anchors) {

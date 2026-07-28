@@ -2688,6 +2688,39 @@ namespace DX11Hook {
         const ImVec2 mouse = ImGui::GetIO().MousePos;
         for (const auto& marker : markers) {
             const auto block = marker.Block();
+            if (marker.Kind() == ChiyanMap::WorldGen::MarkerKind::ChunkRegion) {
+                const auto chunk = marker.Chunk();
+                const float minScreenX = cx + (static_cast<float>(chunk.x * 16) - g_smoothPX) * MapRenderState::bigMapZoom
+                    + MapRenderState::bigMapOffsetX;
+                const float minScreenY = cy + (static_cast<float>(chunk.z * 16) - g_smoothPZ) * MapRenderState::bigMapZoom
+                    + MapRenderState::bigMapOffsetZ;
+                const float maxScreenX = minScreenX + 16.0f * MapRenderState::bigMapZoom;
+                const float maxScreenY = minScreenY + 16.0f * MapRenderState::bigMapZoom;
+                const ImVec2 topLeft(std::min(minScreenX, maxScreenX), std::min(minScreenY, maxScreenY));
+                const ImVec2 bottomRight(std::max(minScreenX, maxScreenX), std::max(minScreenY, maxScreenY));
+                if (bottomRight.x < 0.0f || topLeft.x > ImGui::GetIO().DisplaySize.x
+                    || bottomRight.y < 0.0f || topLeft.y > ImGui::GetIO().DisplaySize.y) {
+                    continue;
+                }
+
+                const ImU32 accent = SeedMapMarkerColor(marker.Layer());
+                drawList->AddRectFilled(topLeft, bottomRight, IM_COL32(105, 214, 99, 58));
+                drawList->AddRect(topLeft, bottomRight, IM_COL32(105, 214, 99, 170));
+                const bool isSelected = selected && ChiyanMap::WorldGen::GetMarkerKey(*selected)
+                    == ChiyanMap::WorldGen::GetMarkerKey(marker);
+                if (isSelected) drawList->AddRect(topLeft, bottomRight, IM_COL32(232, 168, 74, 255), 0.0f, 0, 2.0f);
+
+                const bool hovered = mouse.x >= topLeft.x && mouse.x <= bottomRight.x
+                    && mouse.y >= topLeft.y && mouse.y <= bottomRight.y;
+                if (hovered) {
+                    drawList->AddRect(ImVec2(topLeft.x - 1.0f, topLeft.y - 1.0f),
+                                      ImVec2(bottomRight.x + 1.0f, bottomRight.y + 1.0f), accent, 0.0f, 0, 2.0f);
+                    if (MapRenderState::showSeedMap && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                        SeedMapManager::SelectMarker(marker);
+                    }
+                }
+                continue;
+            }
             const float screenX = cx + (static_cast<float>(block.x) - g_smoothPX) * MapRenderState::bigMapZoom
                 + MapRenderState::bigMapOffsetX;
             const float screenY = cy + (static_cast<float>(block.z) - g_smoothPZ) * MapRenderState::bigMapZoom

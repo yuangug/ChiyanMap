@@ -2,6 +2,20 @@
 
 Last updated: 2026-07-28
 
+## Slime Chunks
+
+- `SlimeChunks` is fixture-verified for the Overworld through vendored
+  cubiomes-bedrock `isSlimeChunk(chunkX, chunkZ)`. Its Bedrock rule seeds the
+  thread-local MT with `(chunkX * 522133279U) ^ chunkZ` and accepts `nextInt(10) == 0`.
+  It does not read loaded chunks, game objects, or world terrain.
+- Regression fixture: block `(-9371, 85, 6953)` is inside chunk `(-586, 434)`;
+  the half-open chunk bounds are `[-9376, -9360) x [6944, 6960)` and the map
+  anchor is `(-9368, 6952)`.
+- The map renders each hit as a translucent green 16x16 cell with a boundary.
+  The seed-map worker, cache keys, selection, clear-all operation, and
+  dimension invalidation are unchanged. The rule is shown only in the
+  Overworld even though its MT result does not consume the world seed.
+
 ## Runtime Evidence
 
 - The Seed Map panel captured raw seed `114514` (`0x000000000001BF52`).

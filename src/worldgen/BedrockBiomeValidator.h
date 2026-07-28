@@ -32,6 +32,9 @@ public:
         std::int64_t regionZ
     ) const noexcept;
     [[nodiscard]] bool IsStructureViable(LayerId layer, BlockPosition anchor) noexcept;
+    // `isSlimeChunk` is a Bedrock 26.20 cubiomes rule. It is intentionally
+    // seed-independent, but remains a pure query with no client-world reads.
+    [[nodiscard]] static bool IsSlimeChunk(ChunkPosition chunk) noexcept;
     [[nodiscard]] std::vector<BlockPosition> FindRareBiomeAnchors(LayerId layer, BlockRect bounds) const;
     [[nodiscard]] std::vector<BlockPosition> FindEndGatewayAnchors(BlockRect bounds) const;
     [[nodiscard]] std::optional<int> GetBiomeIdAt(BlockPosition position) const noexcept;
